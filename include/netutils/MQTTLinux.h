@@ -35,11 +35,7 @@
 #include <string.h>
 #include <signal.h>
 
-#ifdef CONFIG_HAVE_GETHOSTBYNAME
-#  include <netdb.h>
-#else
-#  include <apps/netutils/dnsclient.h>
-#endif
+#include <netdb.h>
 
 typedef struct Timer Timer;
 

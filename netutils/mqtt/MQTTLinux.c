@@ -121,6 +121,62 @@ void NewNetwork(Network * n)
   n->disconnect = linux_disconnect;
 }
 
+static int dns_gethostip(FAR char *hostname, FAR union ip_addr_u *ipaddr,
+                         int addrtype)
+{
+  FAR struct hostent *he;
+
+  he = gethostbyname(hostname);
+  if (he == NULL)
+    {
+      ndbg("gethostbyname failed: %d\n", h_errno);
+      return -ENOENT;
+    }
+#if defined(CONFIG_NET_IPv4) && defined(CONFIG_NET_IPv6)
+
+  else if (he->h_addrtype != addrtype)
+    {
+      ndbg("gethostbyname returned an address of type: %d\n", he->h_addrtype);
+      return -ENOEXEC;
+    }
+  else if (addrtype == AF_INET)
+    {
+      memcpy(&ipaddr->ipv4, he->h_addr, sizeof(in_addr_t));
+    }
+  else /* if (addrtype == AF_INET6) */
+    {
+      memcpy(ipaddr->ipv6, he->h_addr, sizeof(net_ipv6addr_t));
+    }
+
+#elif defined(CONFIG_NET_IPv4)
+
+  else if (he->h_addrtype != AF_INET)
+    {
+      ndbg("gethostbyname returned an address of type: %d\n", he->h_addrtype);
+      return -ENOEXEC;
+    }
+  else
+    {
+      memcpy(&ipaddr->ipv4, he->h_addr, sizeof(in_addr_t));
+    }
+
+#else /* if defined(CONFIG_NET_IPv6) */
+
+  else if (he->h_addrtype != AF_INET6)
+    {
+      ndbg("gethostbyname returned an address of type: %d\n", he->h_addrtype);
+      return -ENOEXEC;
+    }
+  else
+    {
+      memcpy(ipaddr->ipv6, he->h_addr, sizeof(net_ipv6addr_t));
+    }
+
+#endif
+
+  return OK;
+}
+
 /* TODO IPv6 support */
 int ConnectNetwork(Network * n, char *addr, int port)
 {
@@ -154,7 +210,7 @@ int ConnectNetwork(Network * n, char *addr, int port)
 
   server.sin_family = AF_INET;
   server.sin_port = htons(port);
-  ret = dns_gethostip(addr, &server.sin_addr.s_addr);
+  ret = dns_gethostip(addr, (FAR union ip_addr_u *)&server.sin_addr.s_addr, AF_INET);
   if (ret < 0)
     {
       /* Could not resolve host (or malformed IP address) */
