@@ -1,5 +1,7 @@
 #include <nuttx/config.h>
 #include <nuttx/clock.h>
+#include <nuttx/net/ip.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -9,7 +11,62 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <sys/time.h>
-#include <apps/netutils/dnsclient.h>
+
+static int dns_gethostip(FAR char *hostname, FAR union ip_addr_u *ipaddr,
+                         int addrtype)
+{
+  FAR struct hostent *he;
+
+  he = gethostbyname(hostname);
+  if (he == NULL)
+    {
+      ndbg("gethostbyname failed: %d\n", h_errno);
+      return -ENOENT;
+    }
+#if defined(CONFIG_NET_IPv4) && defined(CONFIG_NET_IPv6)
+
+  else if (he->h_addrtype != addrtype)
+    {
+      ndbg("gethostbyname returned an address of type: %d\n", he->h_addrtype);
+      return -ENOEXEC;
+    }
+  else if (addrtype == AF_INET)
+    {
+      memcpy(&ipaddr->ipv4, he->h_addr, sizeof(in_addr_t));
+    }
+  else /* if (addrtype == AF_INET6) */
+    {
+      memcpy(ipaddr->ipv6, he->h_addr, sizeof(net_ipv6addr_t));
+    }
+
+#elif defined(CONFIG_NET_IPv4)
+
+  else if (he->h_addrtype != AF_INET)
+    {
+      ndbg("gethostbyname returned an address of type: %d\n", he->h_addrtype);
+      return -ENOEXEC;
+    }
+  else
+    {
+      memcpy(&ipaddr->ipv4, he->h_addr, sizeof(in_addr_t));
+    }
+
+#else /* if defined(CONFIG_NET_IPv6) */
+
+  else if (he->h_addrtype != AF_INET6)
+    {
+      ndbg("gethostbyname returned an address of type: %d\n", he->h_addrtype);
+      return -ENOEXEC;
+    }
+  else
+    {
+      memcpy(ipaddr->ipv6, he->h_addr, sizeof(net_ipv6addr_t));
+    }
+
+#endif
+
+  return OK;
+}
 
 #ifdef CONFIG_BUILD_KERNEL
 int main(int argc, FAR char *argv[])
@@ -52,7 +109,7 @@ int sockettest_main(int argc, char *argv[])
 	}
 	printf("%s, 2, tv_usec: %d\n", __func__, tv.tv_usec);
 
-	n = dns_gethostip(argv[1], &serv_addr.sin_addr.s_addr);
+	n = dns_gethostip(argv[1], (FAR union ip_addr_u *)&serv_addr.sin_addr.s_addr, AF_INET);
 	if (n != 0) {
 		fprintf(stderr,"ERROR, no such host, n: %d\n", n);
 		goto errout;
