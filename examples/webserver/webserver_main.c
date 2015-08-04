@@ -101,6 +101,7 @@ int main(int argc, FAR char *argv[])
 int webserver_main(int argc, char *argv[])
 #endif
 {
+#ifndef CONFIG_NETUTILS_DHCPC
   struct in_addr addr;
 #if defined(CONFIG_EXAMPLES_WEBSERVER_DHCPC) || defined(CONFIG_EXAMPLES_WEBSERVER_NOMAC)
   uint8_t mac[IFHWADDRLEN];
@@ -179,6 +180,7 @@ int webserver_main(int argc, char *argv[])
         printf("IP: %s\n", inet_ntoa(ds.ipaddr));
     }
 #endif
+#endif /* CONFIG_NETUTILS_DHCPC */
 
 #ifdef CONFIG_NET_TCP
   printf("Starting webserver\n");
