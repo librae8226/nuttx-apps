@@ -145,7 +145,7 @@ void netlib_server(uint16_t portno, pthread_startroutine_t handler, int stacksiz
           /* Close the connection */
 
           close(acceptsd);
-          ndbg("pthread_create failed\n");
+          ndbg("pthread_create failed, ret: %d\n", ret);
 
           if (ret == EAGAIN)
             {
