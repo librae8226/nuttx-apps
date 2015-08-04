@@ -37,6 +37,12 @@
 -include $(TOPDIR)/Make.defs
 include $(APPDIR)/Make.defs
 
+# ROMFS built-in application info
+
+APPNAME = webserver
+PRIORITY = SCHED_PRIORITY_DEFAULT
+STACKSIZE = 8192
+
 # uIP very tiny web server example
 
 ASRCS =
