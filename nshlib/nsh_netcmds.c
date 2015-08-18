@@ -1701,7 +1701,7 @@ int cmd_put(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 #ifndef CONFIG_NSH_DISABLE_WGET
 int cmd_wget(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 {
-  char *localfile = NULL;
+  char *localfile = "/dev/console";
   char *allocfile = NULL;
   char *buffer    = NULL;
   char *fullpath  = NULL;
