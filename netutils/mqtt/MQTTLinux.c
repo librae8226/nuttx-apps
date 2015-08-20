@@ -23,7 +23,7 @@ char expired(Timer * timer)
   struct timeval now, res;
   gettimeofday(&now, NULL);
   timersub(&timer->end_time, &now, &res);
-  return res.tv_sec < 0 || (res.tv_sec == 0 && res.tv_usec <= 0);
+  return (long)res.tv_sec < 0 || (res.tv_sec == 0 && res.tv_usec <= 0);
 }
 
 void countdown_ms(Timer * timer, unsigned int timeout)
@@ -47,8 +47,8 @@ int left_ms(Timer * timer)
   struct timeval now, res;
   gettimeofday(&now, NULL);
   timersub(&timer->end_time, &now, &res);
-  nvdbg("left %d ms\n", (res.tv_sec < 0) ? 0 : res.tv_sec * 1000 + res.tv_usec / 1000);
-  return (res.tv_sec < 0) ? 0 : res.tv_sec * 1000 + res.tv_usec / 1000;
+  nvdbg("tv_sec: %d\n", res.tv_sec);
+  return ((long)res.tv_sec < 0) ? 0 : res.tv_sec * 1000 + res.tv_usec / 1000;
 }
 
 void InitTimer(Timer * timer)
