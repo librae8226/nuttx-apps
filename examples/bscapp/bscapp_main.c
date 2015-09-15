@@ -317,7 +317,6 @@ static int bscapp_test_mqtt(struct bscapp_data *priv)
 {
 	int ret;
 
-	start_mqttsub_thread(priv);
 	ret = sem_wait(&priv->sem);
 	if (ret != 0)
 		printf("sem_wait failed\n");
@@ -345,6 +344,7 @@ static int bscapp_init(struct bscapp_data *priv)
 
 	bsc_mqtt_connect(priv);
 	bsc_mqtt_publish(priv, "/up/bs/checkin", priv->uid);
+	start_mqttsub_thread(priv);
 
 	printf("%s out\n", __func__);
 	return OK;
