@@ -4,17 +4,15 @@
 #
 
 config EXAMPLES_RELAYS
-	bool "wget JSON Example"
+	bool "Relay Example"
 	default n
-	depends on NETUTILS_JSON
 	---help---
-		Enable the wget JSON example
+		Enable the relay example.
 
 if EXAMPLES_RELAYS
 
 config EXAMPLES_RELAYS_NRELAYS
 	int "Number of Relays"
 	default 2
-	depends on ARCH_RELAYS
 
 endif

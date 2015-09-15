@@ -1,0 +1,14 @@
+#
+# For a description of the syntax of this configuration file,
+# see misc/tools/kconfig-language.txt.
+#
+
+if NETUTILS_MQTT
+
+config BSCAPP
+	bool "BS Controller Application"
+	default n
+	---help---
+		Activate BS Controller application.
+
+endif
