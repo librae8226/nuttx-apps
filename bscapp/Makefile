@@ -59,12 +59,12 @@ ifneq ($(CONFIG_BUILD_KERNEL),y)
 endif
 
 ifeq ($(CONFIG_WINDOWS_NATIVE),y)
-  BIN = ..\..\libapps$(LIBEXT)
+  BIN = ..\libapps$(LIBEXT)
 else
 ifeq ($(WINTOOL),y)
-  BIN = ..\\..\\libapps$(LIBEXT)
+  BIN = ..\\libapps$(LIBEXT)
 else
-  BIN = ../../libapps$(LIBEXT)
+  BIN = ../libapps$(LIBEXT)
 endif
 endif
 
@@ -101,7 +101,6 @@ $(BIN_DIR)$(DELIM)$(PROGNAME): $(OBJS) $(MAINOBJ)
 	@echo "LD: $(PROGNAME)"
 	$(Q) $(LD) $(LDELFFLAGS) $(LDLIBPATH) -o $(INSTALL_DIR)$(DELIM)$(PROGNAME) $(ARCHCRT0OBJ) $(MAINOBJ) $(LDLIBS)
 	$(Q) $(NM) -u  $(INSTALL_DIR)$(DELIM)$(PROGNAME)
-	@echo "(debug)" $(CFLAGS)
 
 install: $(BIN_DIR)$(DELIM)$(PROGNAME)
 
@@ -127,7 +126,6 @@ epend: .depend
 
 clean:
 	$(call DELFILE, .built)
-	$(call DELFILE, httpd_fsdata.c)
 	$(call CLEAN)
 
 distclean: clean
@@ -135,4 +133,3 @@ distclean: clean
 	$(call DELFILE, .depend)
 
 -include Make.dep
-

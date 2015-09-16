@@ -36,5 +36,5 @@
 ############################################################################
 
 ifeq ($(CONFIG_BSCAPP),y)
-CONFIGURED_APPS += examples/bscapp
+CONFIGURED_APPS += bscapp
 endif

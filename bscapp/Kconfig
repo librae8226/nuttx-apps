@@ -3,7 +3,7 @@
 # see misc/tools/kconfig-language.txt.
 #
 
-if NETUTILS_MQTT
+menu "BS Controller Specific"
 
 config BSCAPP
 	bool "BS Controller Application"
@@ -11,4 +11,4 @@ config BSCAPP
 	---help---
 		Activate BS Controller application.
 
-endif
+endmenu
