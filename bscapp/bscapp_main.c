@@ -23,9 +23,9 @@
 //#define BSCAPP_DEBUG
 
 #ifdef BSCAPP_DEBUG
-#define MQTT_BROKER_IP		"192.168.100.237"
+#define MQTT_BROKER_IP		"123.57.208.39"
 #define MQTT_BROKER_PORT	1883
-#define URL_INET_ACCESS		"http://192.168.100.237/index.html"
+#define URL_INET_ACCESS		"http://123.57.208.39:8080/config.json"
 #else
 #define MQTT_BROKER_IP		"123.57.208.39"
 #define MQTT_BROKER_PORT	1883
@@ -44,10 +44,12 @@ struct bscapp_data {
 	Client c;
 	sem_t sem;
 	pthread_t tid_mqttsub_thread;
+	pthread_t tid_mqttpub_thread;
 	unsigned char buf[MQTT_BUF_MAX_LEN];
 	unsigned char readbuf[MQTT_BUF_MAX_LEN];
 	volatile int exit;
 	volatile int exit_mqttsub_thread;
+	volatile int exit_mqttpub_thread;
 	char uid[BSCAPP_UID_LEN];
 	char topic_sub_header[MQTT_TOPIC_HEADER_LEN];
 	char topic_pub_header[MQTT_TOPIC_HEADER_LEN];
@@ -60,6 +62,65 @@ enum relays_e {
 	RELAY_4,
 	RELAY_5,
 	RELAY_6
+};
+
+enum output_type {
+	OUTPUT_RELAY,
+	OUTPUT_PWM
+};
+
+struct output_resource {
+	char *name;
+	int id;
+	enum output_type type;
+};
+
+static struct output_resource output_map[] = {
+	{
+		.name = "RELAY1",
+		.id = 1,
+		.type = OUTPUT_RELAY,
+	},
+	{
+		.name = "RELAY2",
+		.id = 2,
+		.type = OUTPUT_RELAY,
+	},
+	{
+		.name = "RELAY3",
+		.id = 3,
+		.type = OUTPUT_RELAY,
+	},
+	{
+		.name = "RELAY4",
+		.id = 4,
+		.type = OUTPUT_RELAY,
+	},
+	{
+		.name = "RELAY5",
+		.id = 5,
+		.type = OUTPUT_RELAY,
+	},
+	{
+		.name = "RELAY6",
+		.id = 6,
+		.type = OUTPUT_RELAY,
+	},
+	{
+		.name = "PWM1",
+		.id = 1,
+		.type = OUTPUT_PWM
+	},
+	{
+		.name = "PWM2",
+		.id = 2,
+		.type = OUTPUT_PWM
+	},
+	{
+		.name = NULL,
+		.id = -1,
+		.type = -1,
+	}
 };
 
 #define RELAY_MIN	RELAY_1
@@ -80,6 +141,45 @@ static void printstrbylen(char *msg, char *str, int len)
 	printf("\n");
 }
 
+static int exec_match_output(char *subtopic, char *act)
+{
+	struct output_resource *res = NULL;
+
+	if (subtopic == NULL) {
+		printf("%s, no subtopic\n", subtopic);
+		return -EINVAL;
+	}
+
+	for (res = &output_map[0]; res->name != NULL; res++) {
+		if (strcmp(res->name, subtopic) == 0) {
+			printf("match: %s, id: %d, type: %d\n", res->name, res->id, res->type);
+			switch (res->type) {
+				case OUTPUT_RELAY:
+					printf("%s, hit relay\n", __func__);
+					if (strcmp(act, "on") == 0) {
+						printf("%s, ACT relay: %s\n", __func__, act);
+						relays_setstat(res->id - 1, true);
+					} else if (strcmp(act, "off") == 0) {
+						printf("%s, ACT relay: %s\n", __func__, act);
+						relays_setstat(res->id - 1, false);
+					} else {
+						printf("%s, unsupported relay act: %s\n", __func__, act);
+						return -EINVAL;
+					}
+					break;
+				case OUTPUT_PWM:
+					printf("%s, hit pwm\n", __func__);
+					break;
+				default:
+					return -EINVAL;
+					break;
+			}
+		}
+	}
+
+	return OK;
+}
+
 static void msg_handler(MessageData *md)
 {
 	MQTTMessage *message = md->message;
@@ -89,9 +189,9 @@ static void msg_handler(MessageData *md)
 	int payload_len = message->payloadlen;
 
 	char subtopic[MQTT_SUBTOPIC_LEN] = {0};
-	char sub_len = 0;
+	char header_len = 0;
 	char *token = NULL;
-	int idx = 0;
+	int ret = -1;
 
 	if (payload_len < MQTT_BUF_MAX_LEN)
 		payload[payload_len] = '\0';
@@ -99,20 +199,36 @@ static void msg_handler(MessageData *md)
 	printstrbylen("topic:", topic, topic_len);
 	printstrbylen("payload:", payload, payload_len);
 
-	sub_len = strlen(g_priv.topic_sub_header);
+	header_len = strlen(g_priv.topic_sub_header);
 
-	if (strncmp(topic, g_priv.topic_sub_header, sub_len) != 0) {
+	if (strncmp(topic, g_priv.topic_sub_header, header_len) != 0) {
 		printf("%s, unexpected topic header\n", __func__);
 		return;
 	}
 
-	strncpy(subtopic, topic + sub_len, topic_len - sub_len);
+	if (topic_len - header_len >= MQTT_SUBTOPIC_LEN) {
+		printf("%s, can't handle subtopic length>%d (%d)\n", __func__, MQTT_SUBTOPIC_LEN, topic_len - header_len);
+		return;
+	}
+	strncpy(subtopic, topic + header_len, topic_len - header_len);
 	printf("%s, subtopic: %s\n", __func__, subtopic);
 
 	token = strtok(subtopic, "/");
+	if (token == NULL) {
+		printf("%s, no subtopic, ignore\n", __func__);
+		return;
+	}
 	if (strcmp(token, "output") == 0) {
 		printf("%s, hit output\n", __func__);
 		token = strtok(NULL, "/");
+		if (token == NULL) {
+			printf("%s, no output subtopic, ignore\n", __func__);
+			return;
+		}
+		ret = exec_match_output(token, payload);
+		if (ret != OK)
+			printf("%s, unsupported output %s with payload: %s\n", __func__, token, payload);
+#if 0
 		if (strcmp(token, "relay") == 0) {
 			token = strtok(NULL, "/");
 			printf("%s, hit relay: %s\n", __func__, token);
@@ -135,6 +251,7 @@ static void msg_handler(MessageData *md)
 		} else {
 			printf("%s, unsupported: %s\n", __func__, token);
 		}
+#endif
 	} else if (strcmp(token, "config") == 0) {
 		printf("%s, hit config\n", __func__);
 	} else if (strcmp(token, "exit") == 0) {
@@ -181,7 +298,6 @@ int bsc_mqtt_subscribe(struct bscapp_data *priv, char *topic)
 		MQTTYield(&priv->c, 1000);
 	}
 
-	printf("Stopping\n");
 	priv->exit = 1;
 
 	return OK;
@@ -318,8 +434,8 @@ static int start_mqttsub_thread(struct bscapp_data *priv)
 	pthread_attr_init(&attr);
 	sparam.sched_priority = 50;
 	(void)pthread_attr_setschedparam(&attr, &sparam);
-	(void)pthread_attr_setstacksize(&attr, 4096);
-	pthread_setname_np(priv->tid_mqttsub_thread, "bsc_mqtt_subscribe");
+	(void)pthread_attr_setstacksize(&attr, 2048);
+	pthread_setname_np(priv->tid_mqttsub_thread, "mqttsub_thread");
 
 	printf("starting mqttsub thread\n");
 	ret = pthread_create(&priv->tid_mqttsub_thread, &attr, mqttsub_thread, priv);
@@ -331,22 +447,58 @@ static int start_mqttsub_thread(struct bscapp_data *priv)
 	return ret;
 }
 
-static int bscapp_test_mqtt(struct bscapp_data *priv)
+static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 {
+	struct bscapp_data *priv = (struct bscapp_data *)arg;
+	char t[MQTT_TOPIC_LEN];
+	while (!g_priv.exit_mqttpub_thread) {
+		sprintf(t, "%s/input/AI1", priv->topic_pub_header);
+		bsc_mqtt_publish(&g_priv, t, "990");
+		sprintf(t, "%s/input/AI2", priv->topic_pub_header);
+		bsc_mqtt_publish(&g_priv, t, "880");
+		sprintf(t, "%s/input/AI3", priv->topic_pub_header);
+		bsc_mqtt_publish(&g_priv, t, "770");
+		sprintf(t, "%s/input/AI4", priv->topic_pub_header);
+		bsc_mqtt_publish(&g_priv, t, "660");
+		sleep(10);
+	}
+	printf("%s, exited.\n", __func__);
+	return NULL;
+}
+
+static int start_mqttpub_thread(struct bscapp_data *priv)
+{
+	struct sched_param sparam;
+	pthread_attr_t attr;
 	int ret;
+
+	pthread_attr_init(&attr);
+	sparam.sched_priority = 50;
+	(void)pthread_attr_setschedparam(&attr, &sparam);
+	(void)pthread_attr_setstacksize(&attr, 2048);
+	pthread_setname_np(priv->tid_mqttpub_thread, "mqttpub_thread");
+
+	printf("starting mqttpub thread\n");
+	ret = pthread_create(&priv->tid_mqttpub_thread, &attr, mqttpub_thread, priv);
+	if (ret != OK) {
+		printf("ERROR: Failed to create thread: %d\n", ret);
+		return -EFAULT;
+	}
+
+	return ret;
+}
+
+static int selftest_mqtt(struct bscapp_data *priv)
+{
 	int i;
 	char t[MQTT_TOPIC_LEN] = {0};
 
-	ret = sem_wait(&priv->sem);
-	if (ret != 0)
-		printf("sem_wait failed\n");
-
 	for (i = RELAY_MIN; i <= RELAY_MAX; i++) {
-		sprintf(t, "%s/output/relay/%d", priv->topic_sub_header, i);
+		sprintf(t, "%s/output/RELAY%d", priv->topic_sub_header, i);
 		bsc_mqtt_publish(priv, t, "on");
 	}
 	for (i = RELAY_MIN; i <= RELAY_MAX; i++) {
-		sprintf(t, "%s/output/relay/%d", priv->topic_sub_header, i);
+		sprintf(t, "%s/output/RELAY%d", priv->topic_sub_header, i);
 		bsc_mqtt_publish(priv, t, "off");
 	}
 
@@ -355,6 +507,7 @@ static int bscapp_test_mqtt(struct bscapp_data *priv)
 
 static int bscapp_init(struct bscapp_data *priv)
 {
+	int ret;
 	printf("%s in\n", __func__);
 
 	bzero(priv, sizeof(struct bscapp_data));
@@ -364,7 +517,11 @@ static int bscapp_init(struct bscapp_data *priv)
 	uint32_t uid_32_63 = (*(volatile uint32_t *)(0x1ffff7e8 + 4));
 	uint32_t uid_64_95 = (*(volatile uint32_t *)(0x1ffff7e8 + 8));
 
+#ifdef BSCAPP_DEBUG
+	sprintf(priv->uid, "864-test");
+#else
 	sprintf(priv->uid, "864-%08x%08x%08x", uid_0_31, uid_32_63, uid_64_95);
+#endif
 	printf("uid: %s\n", priv->uid);
 
 	sprintf(priv->topic_sub_header, "/down/bs/%s", priv->uid);
@@ -373,8 +530,17 @@ static int bscapp_init(struct bscapp_data *priv)
 	printf("pub: %s\n", priv->topic_pub_header);
 
 	bsc_mqtt_connect(priv);
-	bsc_mqtt_publish(priv, "/up/bs/checkin", priv->uid);
 	start_mqttsub_thread(priv);
+
+	ret = sem_wait(&priv->sem);
+	if (ret != 0)
+		printf("sem_wait failed\n");
+
+	/* self test */
+	selftest_mqtt(&g_priv);
+
+	start_mqttpub_thread(priv);
+	bsc_mqtt_publish(priv, "/up/bs/checkin", priv->uid);
 
 	printf("%s out\n", __func__);
 	return OK;
@@ -400,10 +566,7 @@ int bscapp_main(int argc, char *argv[])
 	wait_for_ip();
 	wait_for_internet();
 	bscapp_init(&g_priv);
-	bscapp_test_mqtt(&g_priv);
-
 	while (!g_priv.exit) {
-		//bsc_mqtt_publish(&g_priv, T_AIN"1", "990");
 		sleep(1);
 	}
 
