@@ -20,14 +20,24 @@
 #include <apps/netutils/webclient.h>
 #include <apps/netutils/MQTTClient.h>
 
+//#define BSCAPP_DEBUG
+
+#ifdef BSCAPP_DEBUG
+#define MQTT_BROKER_IP		"192.168.100.237"
+#define MQTT_BROKER_PORT	1883
+#define URL_INET_ACCESS		"http://192.168.100.237/index.html"
+#else
+#define MQTT_BROKER_IP		"123.57.208.39"
+#define MQTT_BROKER_PORT	1883
+#define URL_INET_ACCESS		"http://123.57.208.39:8080/config.json"
+#endif
+
+#define BSCAPP_UID_LEN		64
 #define MQTT_BUF_MAX_LEN	128
 #define MQTT_CMD_TIMEOUT	1000
-#define MQTT_SERVER_IP		"123.57.208.39"
-#define MQTT_SERVER_PORT	1883
-#define BSCAPP_UID_LEN		64
-#define URL_INET_ACCESS		"http://123.57.208.39:8080/config.json"
-#define TOPIC_SUB_HEADER	"/down/bs/"
-#define TOPIC_PUB_HEADER	"/up/bs/"
+#define MQTT_TOPIC_LEN		128
+#define MQTT_TOPIC_HEADER_LEN	64
+#define MQTT_SUBTOPIC_LEN	32
 
 struct bscapp_data {
 	Network n;
@@ -39,7 +49,21 @@ struct bscapp_data {
 	volatile int exit;
 	volatile int exit_mqttsub_thread;
 	char uid[BSCAPP_UID_LEN];
+	char topic_sub_header[MQTT_TOPIC_HEADER_LEN];
+	char topic_pub_header[MQTT_TOPIC_HEADER_LEN];
 };
+
+enum relays_e {
+	RELAY_1 = 1,
+	RELAY_2,
+	RELAY_3,
+	RELAY_4,
+	RELAY_5,
+	RELAY_6
+};
+
+#define RELAY_MIN	RELAY_1
+#define RELAY_MAX	RELAY_6
 
 static struct bscapp_data g_priv;
 
@@ -56,21 +80,6 @@ static void printstrbylen(char *msg, char *str, int len)
 	printf("\n");
 }
 
-#define GPIO_RELAYS_R01 (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz|\
-                         GPIO_OUTPUT_SET|GPIO_PORTA|GPIO_PIN0)
-#define GPIO_RELAYS_R02 (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz|\
-                         GPIO_OUTPUT_SET|GPIO_PORTA|GPIO_PIN3)
-#define GPIO_RELAYS_R03 (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz|\
-                         GPIO_OUTPUT_SET|GPIO_PORTA|GPIO_PIN4)
-#define GPIO_RELAYS_R04 (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz|\
-                         GPIO_OUTPUT_SET|GPIO_PORTA|GPIO_PIN5)
-#define GPIO_RELAYS_R05 (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz|\
-                         GPIO_OUTPUT_SET|GPIO_PORTA|GPIO_PIN6)
-#define GPIO_RELAYS_R06 (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz|\
-                         GPIO_OUTPUT_SET|GPIO_PORTA|GPIO_PIN15)
-
-#define T_RELAY "/down/bs/864-05d3ff343536584143014459/relay/"
-#define T_EXIT "/down/bs/864-05d3ff343536584143014459/exit"
 static void msg_handler(MessageData *md)
 {
 	MQTTMessage *message = md->message;
@@ -78,55 +87,61 @@ static void msg_handler(MessageData *md)
 	int topic_len = md->topicName->lenstring.len;
 	char *payload = (char *)message->payload;
 	int payload_len = message->payloadlen;
+
+	char subtopic[MQTT_SUBTOPIC_LEN] = {0};
+	char sub_len = 0;
+	char *token = NULL;
+	int idx = 0;
+
+	if (payload_len < MQTT_BUF_MAX_LEN)
+		payload[payload_len] = '\0';
+
 	printstrbylen("topic:", topic, topic_len);
 	printstrbylen("payload:", payload, payload_len);
 
-	if (strcmp(topic, T_RELAY"1") == 0) {
-		printf("HIT: relay 1\n");
-		if (strcmp(payload, "on") == 0) {
-			printf("relay 2 -> on\n");
-//			stm32_gpiowrite(GPIO_RELAYS_R01, 0);
-		} else {
-			printf("relay 2 -> off\n");
-//			stm32_gpiowrite(GPIO_RELAYS_R01, 1);
-		}
-	} else if (strcmp(topic, T_RELAY"2") == 0) {
-		printf("HIT: relay 2\n");
-		if (strcmp(payload, "on") == 0)
-			printf("relay 2 -> on\n");
-		else
-			printf("relay 2 -> off\n");
-	} else if (strcmp(topic, T_RELAY"3") == 0) {
-		printf("HIT: relay 3\n");
-		if (strcmp(payload, "on") == 0)
-			printf("relay 3 -> on\n");
-		else
-			printf("relay 3 -> off\n");
-	} else if (strcmp(topic, T_RELAY"4") == 0) {
-		printf("HIT: relay 4\n");
-		if (strcmp(payload, "on") == 0)
-			printf("relay 4 -> on\n");
-		else
-			printf("relay 4 -> off\n");
-	} else if (strcmp(topic, T_RELAY"5") == 0) {
-		printf("HIT: relay 5\n");
-		if (strcmp(payload, "on") == 0)
-			printf("relay 5 -> on\n");
-		else
-			printf("relay 5 -> off\n");
-	} else if (strcmp(topic, T_RELAY"6") == 0) {
-		printf("HIT: relay 6\n");
-		if (strcmp(payload, "on") == 0)
-			printf("relay 6 -> on\n");
-		else
-			printf("relay 6 -> off\n");
-	} else {
-		printf("HIT: nothing\n");
+	sub_len = strlen(g_priv.topic_sub_header);
+
+	if (strncmp(topic, g_priv.topic_sub_header, sub_len) != 0) {
+		printf("%s, unexpected topic header\n", __func__);
+		return;
 	}
 
-	if (strcmp(topic, T_EXIT) == 0) {
-		printf("HIT: exit\n", topic);
-		g_priv.exit_mqttsub_thread = 1;
+	strncpy(subtopic, topic + sub_len, topic_len - sub_len);
+	printf("%s, subtopic: %s\n", __func__, subtopic);
+
+	token = strtok(subtopic, "/");
+	if (strcmp(token, "output") == 0) {
+		printf("%s, hit output\n", __func__);
+		token = strtok(NULL, "/");
+		if (strcmp(token, "relay") == 0) {
+			token = strtok(NULL, "/");
+			printf("%s, hit relay: %s\n", __func__, token);
+			idx = atoi(token);
+			if (idx >= RELAY_MIN && idx <= RELAY_MAX) {
+				if (strcmp(payload, "on") == 0) {
+					printf("%s, ACT relay: %s\n", __func__, payload);
+					relays_setstat(idx - 1, true);
+				} else if (strcmp(payload, "off") == 0) {
+					printf("%s, ACT relay: %s\n", __func__, payload);
+					relays_setstat(idx - 1, false);
+				} else {
+					printf("%s, unsupported: %s\n", __func__, payload);
+				}
+			} else {
+				printf("%s, idx %d invalid\n", __func__, idx);
+			}
+		} else if (strcmp(token, "pwm") == 0) {
+			printf("%s, hit pwm\n", __func__);
+		} else {
+			printf("%s, unsupported: %s\n", __func__, token);
+		}
+	} else if (strcmp(token, "config") == 0) {
+		printf("%s, hit config\n", __func__);
+	} else if (strcmp(token, "exit") == 0) {
+		printf("%s, hit exit\n", __func__);
+		//g_priv.exit_mqttsub_thread = 1;
+	} else {
+		printf("%s, unsupported: %s\n", __func__, token);
 	}
 }
 
@@ -209,7 +224,7 @@ int bsc_mqtt_connect(struct bscapp_data *priv)
 	int ret;
 
 	NewNetwork(&priv->n);
-	while (ConnectNetwork(&priv->n, MQTT_SERVER_IP, MQTT_SERVER_PORT) != OK) {
+	while (ConnectNetwork(&priv->n, MQTT_BROKER_IP, MQTT_BROKER_PORT) != OK) {
 		printf("Failed to connect network, try again\n");
 		usleep(100000);
 	}
@@ -225,7 +240,7 @@ int bsc_mqtt_connect(struct bscapp_data *priv)
 	conn_data.keepAliveInterval = 10;
 	conn_data.cleansession = 1;
 
-	printf("Connecting to %s %d\n", MQTT_SERVER_IP, MQTT_SERVER_PORT);
+	printf("Connecting to %s %d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
 	do {
 		ret = MQTTConnect(&priv->c, &conn_data);
 		if (ret < 0) {
@@ -287,7 +302,10 @@ static int wait_for_internet(void)
 static pthread_addr_t mqttsub_thread(pthread_addr_t arg)
 {
 	struct bscapp_data *priv = (struct bscapp_data *)arg;
-	bsc_mqtt_subscribe(priv, "/#");
+	char t[MQTT_TOPIC_LEN];
+	sprintf(t, "%s/#", priv->topic_sub_header);
+	bsc_mqtt_subscribe(priv, t);
+	printf("%s, exited.\n", __func__);
 	return NULL;
 }
 
@@ -316,14 +334,21 @@ static int start_mqttsub_thread(struct bscapp_data *priv)
 static int bscapp_test_mqtt(struct bscapp_data *priv)
 {
 	int ret;
+	int i;
+	char t[MQTT_TOPIC_LEN] = {0};
 
 	ret = sem_wait(&priv->sem);
 	if (ret != 0)
 		printf("sem_wait failed\n");
 
-	bsc_mqtt_publish(priv, "/up/bs/test", "test message 1");
-	bsc_mqtt_publish(priv, "/up/bs/test", "test message 2");
-	bsc_mqtt_publish(priv, "/up/bs/test", "test message 3");
+	for (i = RELAY_MIN; i <= RELAY_MAX; i++) {
+		sprintf(t, "%s/output/relay/%d", priv->topic_sub_header, i);
+		bsc_mqtt_publish(priv, t, "on");
+	}
+	for (i = RELAY_MIN; i <= RELAY_MAX; i++) {
+		sprintf(t, "%s/output/relay/%d", priv->topic_sub_header, i);
+		bsc_mqtt_publish(priv, t, "off");
+	}
 
 	return OK;
 }
@@ -342,6 +367,11 @@ static int bscapp_init(struct bscapp_data *priv)
 	sprintf(priv->uid, "864-%08x%08x%08x", uid_0_31, uid_32_63, uid_64_95);
 	printf("uid: %s\n", priv->uid);
 
+	sprintf(priv->topic_sub_header, "/down/bs/%s", priv->uid);
+	sprintf(priv->topic_pub_header, "/up/bs/%s", priv->uid);
+	printf("sub: %s\n", priv->topic_sub_header);
+	printf("pub: %s\n", priv->topic_pub_header);
+
 	bsc_mqtt_connect(priv);
 	bsc_mqtt_publish(priv, "/up/bs/checkin", priv->uid);
 	start_mqttsub_thread(priv);
@@ -359,7 +389,6 @@ static int bscapp_deinit(struct bscapp_data *priv)
 	return OK;
 }
 
-#define T_AIN	"/up/bs/864-05d3ff343536584143014459/input/ain/"
 #ifdef CONFIG_BUILD_KERNEL
 int main(int argc, FAR char *argv[])
 #else
@@ -367,16 +396,20 @@ int bscapp_main(int argc, char *argv[])
 #endif
 {
 	printf("%s entry\n", __func__);
+
 	wait_for_ip();
 	wait_for_internet();
 	bscapp_init(&g_priv);
 	bscapp_test_mqtt(&g_priv);
+
 	while (!g_priv.exit) {
 		//bsc_mqtt_publish(&g_priv, T_AIN"1", "990");
 		sleep(1);
 	}
+
 	pthread_join(g_priv.tid_mqttsub_thread, NULL);
 	bscapp_deinit(&g_priv);
+
 	printf("%s exited\n", __func__);
 	return OK;
 }
