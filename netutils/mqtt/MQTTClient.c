@@ -206,8 +206,12 @@ int keepalive(Client* c)
             InitTimer(&timer);
             countdown_ms(&timer, 1000);
             int len = MQTTSerialize_pingreq(c->buf, c->buf_size);
-            if (len > 0 && (rc = sendPacket(c, len, &timer)) == SUCCESS) // send the ping packet
+
+	    // send the ping packet
+            if (len > 0 && (rc = sendPacket(c, len, &timer)) == SUCCESS) {
                 c->ping_outstanding = 1;
+		nvdbg("pingreq\n");
+	    }
         }
     }
 

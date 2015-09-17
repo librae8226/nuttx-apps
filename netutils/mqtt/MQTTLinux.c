@@ -47,7 +47,7 @@ int left_ms(Timer * timer)
   struct timeval now, res;
   gettimeofday(&now, NULL);
   timersub(&timer->end_time, &now, &res);
-  nvdbg("tv_sec: %d\n", res.tv_sec);
+  nvdbg("tv_sec: %d, tv_usec: %d\n", res.tv_sec, res.tv_usec);
   return ((long)res.tv_sec < 0) ? 0 : res.tv_sec * 1000 + res.tv_usec / 1000;
 }
 
