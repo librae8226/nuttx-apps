@@ -322,7 +322,7 @@ int bsc_mqtt_subscribe(struct bscapp_data *priv, char *topic)
 	while (!priv->exit_mqttsub_thread) {
 		ret = MQTTYield(&priv->c, 1000);
 		if (ret < 0)
-			bsc_err("error yield, ret: %d\n", ret);
+			bsc_warn("yield failed, ret: %d\n", ret);
 	}
 
 	return OK;
@@ -361,7 +361,7 @@ int bsc_mqtt_publish(struct bscapp_data *priv, char *topic, char *payload)
 		if (msg.qos > 0) {
 			ret = MQTTYield(&priv->c, 100);
 			if (ret < 0)
-				bsc_err("error yield, ret: %d\n", ret);
+				bsc_warn("yield failed, ret: %d\n", ret);
 		}
 	}
 
@@ -372,7 +372,7 @@ int bsc_mqtt_connect(struct bscapp_data *priv)
 {
 	int ret;
 
-	bsc_info("connecting to broker %s:%d...\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
+	bsc_info("connecting to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
 	NewNetwork(&priv->n);
 	while (ConnectNetwork(&priv->n, MQTT_BROKER_IP, MQTT_BROKER_PORT) != OK) {
 		bsc_warn("failed to connect network, try again\n");
@@ -415,13 +415,14 @@ static int wait_for_ip(void)
 	struct in_addr iaddr;
 	int ret = -1;
 	while (1) {
-		bsc_info("... 0x%08x\n", iaddr.s_addr);
 		ret = netlib_get_ipv4addr("eth0", &iaddr);
 		if (ret < 0) {
 			bsc_err("netlib_get_ipv4addr failed.\n");
+			sleep(1);
 			continue;
 		}
-		if (iaddr.s_addr != 0x0)
+		bsc_info("... 0x%08x\n", iaddr.s_addr);
+		if (iaddr.s_addr != 0x0 && iaddr.s_addr != 0xdeadbeef)
 			break;
 		sleep(1);
 	}
