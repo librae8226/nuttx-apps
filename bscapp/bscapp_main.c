@@ -20,8 +20,11 @@
 #include <apps/netutils/webclient.h>
 #include <apps/netutils/MQTTClient.h>
 
-//#define BSCAPP_TEST
-//#define BSCAPP_DEBUG
+#define BSCAPP_BUILD_TEST	1
+#define BSCAPP_BUILD_DEV	2
+
+#define BUILD_SPECIAL		BSCAPP_BUILD_DEV
+#define BSCAPP_DEBUG
 
 #ifdef BSCAPP_DEBUG
 #define bsc_dbg(format, ...) \
@@ -40,7 +43,7 @@
 #define bsc_err(format, ...) \
 	syslog(LOG_ERR, EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
 
-#ifdef BSCAPP_TEST
+#if BUILD_SPECIAL == BSCAPP_BUILD_TEST
 #define MQTT_BROKER_IP		"123.57.208.39"
 #define MQTT_BROKER_PORT	1883
 #define URL_INET_ACCESS		"http://123.57.208.39:8080/config.json"
@@ -56,6 +59,11 @@
 #define MQTT_TOPIC_LEN		128
 #define MQTT_TOPIC_HEADER_LEN	64
 #define MQTT_SUBTOPIC_LEN	32
+
+#define ADC_CH_AI1	10
+#define ADC_CH_AI2	12
+#define ADC_CH_AI3	13
+#define ADC_CH_AI4	9
 
 struct bscapp_data {
 	Network n;
@@ -153,7 +161,7 @@ static void printstrbylen(char *msg, char *str, int len)
 		return;
 	bsc_info("%s (%d): ", msg, len);
 	for (i = 0; i < len; i++)
-		printf("%c", str[i]);
+		bsc_printf("%c", str[i]);
 	printf("\n");
 #if 0
 	printf("\t");
@@ -337,8 +345,8 @@ int bsc_mqtt_publish(struct bscapp_data *priv, char *topic, char *payload)
 	if (topic == NULL || payload == NULL)
 		return -EINVAL;
 
-	bsc_info("pub topic: %s\n", topic);
-	bsc_info("payload  : %s\n", payload);
+	bsc_dbg("pub topic: %s\n", topic);
+	bsc_dbg("payload  : %s\n", payload);
 
 	bzero(msgbuf, sizeof(msgbuf));
 	if (strlen(payload) > MQTT_BUF_MAX_LEN) {
@@ -495,17 +503,20 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 {
 	struct bscapp_data *priv = (struct bscapp_data *)arg;
 	char t[MQTT_TOPIC_LEN];
+	char payload[8];
 	while (!g_priv.exit_mqttpub_thread) {
-#if 0
 		sprintf(t, "%s/input/AI1", priv->topic_pub_header);
-		bsc_mqtt_publish(&g_priv, t, "990");
+		sprintf(payload, "%d", adc_measure(ADC_CH_AI1));
+		bsc_mqtt_publish(&g_priv, t, payload);
 		sprintf(t, "%s/input/AI2", priv->topic_pub_header);
-		bsc_mqtt_publish(&g_priv, t, "880");
+		sprintf(payload, "%d", adc_measure(ADC_CH_AI2));
+		bsc_mqtt_publish(&g_priv, t, payload);
 		sprintf(t, "%s/input/AI3", priv->topic_pub_header);
-		bsc_mqtt_publish(&g_priv, t, "770");
+		sprintf(payload, "%d", adc_measure(ADC_CH_AI3));
+		bsc_mqtt_publish(&g_priv, t, payload);
 		sprintf(t, "%s/input/AI4", priv->topic_pub_header);
-		bsc_mqtt_publish(&g_priv, t, "660");
-#endif
+		sprintf(payload, "%d", adc_measure(ADC_CH_AI4));
+		bsc_mqtt_publish(&g_priv, t, payload);
 		sleep(1);
 	}
 	bsc_info("exited.\n");
@@ -562,13 +573,14 @@ static int bscapp_init(struct bscapp_data *priv)
 	uint32_t uid_32_63 = (*(volatile uint32_t *)(0x1ffff7e8 + 4));
 	uint32_t uid_64_95 = (*(volatile uint32_t *)(0x1ffff7e8 + 8));
 
-#ifdef BSCAPP_TEST
+#if BUILD_SPECIAL == BSCAPP_BUILD_TEST
 	sprintf(priv->uid, "864-test");
+#elif BUILD_SPECIAL == BSCAPP_BUILD_DEV
+	sprintf(priv->uid, "864-dev");
 #else
 	sprintf(priv->uid, "864-%08x%08x%08x", uid_0_31, uid_32_63, uid_64_95);
 #endif
 	bsc_info("uid: %s\n", priv->uid);
-
 	sprintf(priv->topic_sub_header, "/down/bs/%s", priv->uid);
 	sprintf(priv->topic_pub_header, "/up/bs/%s", priv->uid);
 	bsc_info("sub: %s\n", priv->topic_sub_header);
@@ -588,6 +600,12 @@ static int bscapp_deinit(struct bscapp_data *priv)
 	return OK;
 }
 
+static int bscapp_hw_init(struct bscapp_data *priv)
+{
+	adc_init();
+	return OK;
+}
+
 #ifdef CONFIG_BUILD_KERNEL
 int main(int argc, FAR char *argv[])
 #else
@@ -599,6 +617,8 @@ int bscapp_main(int argc, char *argv[])
 
 	bsc_info("entry\n");
 
+	bscapp_hw_init(priv);
+
 	wait_for_ip();
 	wait_for_internet();
 	bscapp_init(priv);
@@ -608,7 +628,7 @@ int bscapp_main(int argc, char *argv[])
 	ret = sem_wait(&priv->sem);
 	if (ret != 0)
 		bsc_err("sem_wait failed\n");
-#ifdef BSCAPP_TEST
+#if BUILD_SPECIAL == BSCAPP_BUILD_TEST || BUILD_SPECIAL == BSCAPP_BUILD_DEV
 	selftest_mqtt(priv);
 #endif
 	do {

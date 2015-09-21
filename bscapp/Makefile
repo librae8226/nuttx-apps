@@ -44,7 +44,7 @@ STACKSIZE = 4096
 
 ASRCS =
 CSRCS =
-MAINSRC = bscapp_main.c
+MAINSRC = bscapp_main.c adc_hw.c
 CFLAGS += -I$(ARCH_SRCDIR)/chip -I$(ARCH_SRCDIR)/common -I$(ARCH_SRCDIR)/armv7-m
 
 AOBJS = $(ASRCS:.S=$(OBJEXT))
