@@ -23,6 +23,9 @@
 #define BSCAPP_BUILD_TEST	1
 #define BSCAPP_BUILD_DEV	2
 
+/*
+ * Comment out below lines to build release.
+ */
 #define BUILD_SPECIAL		BSCAPP_BUILD_DEV
 #define BSCAPP_DEBUG
 
@@ -60,22 +63,19 @@
 #define MQTT_TOPIC_HEADER_LEN	64
 #define MQTT_SUBTOPIC_LEN	32
 
-#define ADC_CH_AI1	10
-#define ADC_CH_AI2	12
-#define ADC_CH_AI3	13
-#define ADC_CH_AI4	9
-
 struct bscapp_data {
 	Network n;
 	Client c;
 	sem_t sem;
 	pthread_t tid_mqttsub_thread;
 	pthread_t tid_mqttpub_thread;
+	pthread_t tid_sample_thread;
 	unsigned char buf[MQTT_BUF_MAX_LEN];
 	unsigned char readbuf[MQTT_BUF_MAX_LEN];
 	volatile int exit;
 	volatile int exit_mqttsub_thread;
 	volatile int exit_mqttpub_thread;
+	volatile int exit_sample_thread;
 	char uid[BSCAPP_UID_LEN];
 	char topic_sub_header[MQTT_TOPIC_HEADER_LEN];
 	char topic_pub_header[MQTT_TOPIC_HEADER_LEN];
@@ -96,8 +96,8 @@ enum output_type {
 };
 
 struct output_resource {
-	char *name;
-	int id;
+	char             *name;
+	int              id;
 	enum output_type type;
 };
 
@@ -135,22 +135,96 @@ static struct output_resource output_map[] = {
 	{
 		.name = "PWM1",
 		.id = 1,
-		.type = OUTPUT_PWM
+		.type = OUTPUT_PWM,
 	},
 	{
 		.name = "PWM2",
 		.id = 2,
-		.type = OUTPUT_PWM
+		.type = OUTPUT_PWM,
 	},
 	{
 		.name = NULL,
 		.id = -1,
 		.type = -1,
-	}
+	},
 };
 
 #define RELAY_MIN	RELAY_1
 #define RELAY_MAX	RELAY_6
+
+enum input_type {
+	INPUT_AI,
+	INPUT_DI_TEMPERATURE,
+	INPUT_DI_HUMIDITY,
+	INPUT_DI_COUNTER,
+	INPUT_DI_SWITCH,
+	INPUT_ONEWIRE,
+};
+
+struct input_resource {
+	char            *name;
+	char            *st;
+	int             id;
+	bool            valid;
+	uint32_t        value;
+	enum input_type type;
+};
+
+static struct input_resource input_map[] = {
+	{
+		.name  = "AI1",
+		.st    = "/input/AI1",
+		.id    = 1,
+		.valid = true,
+		.value = 0,
+		.type  = INPUT_AI,
+	},
+	{
+		.name  = "AI2",
+		.st    = "/input/AI2",
+		.id    = 2,
+		.valid = true,
+		.value = 0,
+		.type  = INPUT_AI,
+	},
+	{
+		.name  = "AI3",
+		.st    = "/input/AI3",
+		.id    = 3,
+		.valid = true,
+		.value = 0,
+		.type  = INPUT_AI,
+	},
+	{
+		.name  = "AI4",
+		.st    = "/input/AI4",
+		.id    = 4,
+		.valid = true,
+		.value = 0,
+		.type  = INPUT_AI,
+	},
+	{
+		.name  = NULL,
+		.st    = NULL,
+		.id    = -1,
+		.valid = false,
+		.value = -1,
+		.type  = -1,
+	},
+};
+
+#define ADC_CH_AI1	10
+#define ADC_CH_AI2	12
+#define ADC_CH_AI3	13
+#define ADC_CH_AI4	9
+#define ADC_CH_MAX	4
+
+static int adc_ch_ai[ADC_CH_MAX] = {
+	ADC_CH_AI1,
+	ADC_CH_AI2,
+	ADC_CH_AI3,
+	ADC_CH_AI4
+};
 
 static struct bscapp_data g_priv;
 
@@ -186,7 +260,7 @@ static int exec_match_output(char *subtopic, char *act)
 			bsc_dbg("match: %s, id: %d, type: %d\n", res->name, res->id, res->type);
 			switch (res->type) {
 				case OUTPUT_RELAY:
-					bsc_info("hit relay %d\n", res->id);
+					bsc_dbg("hit relay %d\n", res->id);
 					if (strcmp(act, "on") == 0) {
 						bsc_info("ACT RELAY%d: %s\n", res->id, act);
 						relays_setstat(res->id - 1, true);
@@ -251,7 +325,7 @@ static void msg_handler(MessageData *md)
 		return;
 	}
 	if (strcmp(token, "output") == 0) {
-		bsc_info("hit output\n");
+		bsc_dbg("hit output\n");
 		token = strtok(NULL, "/");
 		if (token == NULL) {
 			bsc_warn("no output subtopic, ignore\n");
@@ -504,19 +578,19 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 	struct bscapp_data *priv = (struct bscapp_data *)arg;
 	char t[MQTT_TOPIC_LEN];
 	char payload[8];
-	while (!g_priv.exit_mqttpub_thread) {
-		sprintf(t, "%s/input/AI1", priv->topic_pub_header);
-		sprintf(payload, "%d", adc_measure(ADC_CH_AI1));
-		bsc_mqtt_publish(&g_priv, t, payload);
-		sprintf(t, "%s/input/AI2", priv->topic_pub_header);
-		sprintf(payload, "%d", adc_measure(ADC_CH_AI2));
-		bsc_mqtt_publish(&g_priv, t, payload);
-		sprintf(t, "%s/input/AI3", priv->topic_pub_header);
-		sprintf(payload, "%d", adc_measure(ADC_CH_AI3));
-		bsc_mqtt_publish(&g_priv, t, payload);
-		sprintf(t, "%s/input/AI4", priv->topic_pub_header);
-		sprintf(payload, "%d", adc_measure(ADC_CH_AI4));
-		bsc_mqtt_publish(&g_priv, t, payload);
+	struct input_resource *res = NULL;
+
+	while (!priv->exit_mqttpub_thread) {
+		res = &input_map[0];
+		for (; res->name != NULL; res++) {
+			if (res->valid == false) {
+				bsc_dbg("%s isn't valid, continue\n", res->name);
+				continue;
+			}
+			sprintf(t, "%s%s", priv->topic_pub_header, res->st);
+			sprintf(payload, "%d", res->value);
+			bsc_mqtt_publish(priv, t, payload);
+		}
 		sleep(1);
 	}
 	bsc_info("exited.\n");
@@ -537,6 +611,115 @@ static int start_mqttpub_thread(struct bscapp_data *priv)
 
 	bsc_info("starting mqttpub thread\n");
 	ret = pthread_create(&priv->tid_mqttpub_thread, &attr, mqttpub_thread, priv);
+	if (ret != OK) {
+		bsc_err("failed to create thread: %d\n", ret);
+		return -EFAULT;
+	}
+
+	return ret;
+}
+
+static int feed_input_ai(struct input_resource *res)
+{
+	uint16_t adc_ret = 0;
+
+	if (res == NULL) {
+		bsc_err("res is NULL!\n");
+		return -EINVAL;
+	}
+
+	if (res->valid == false)
+		return OK;
+
+	adc_ret = adc_measure(adc_ch_ai[res->id]);
+
+	if (adc_ret == 0xffff) {
+		bsc_err("adc ch%d error!\n", res->id);
+		return -EFAULT;
+	}
+
+	res->value = adc_ret;
+	return OK;
+}
+
+static int feed_input_di_temperature(struct input_resource *res)
+{
+	return OK;
+}
+
+static int feed_input_di_humidity(struct input_resource *res)
+{
+	return OK;
+}
+
+static int feed_input_di_counter(struct input_resource *res)
+{
+	return OK;
+}
+
+static int feed_input_di_switch(struct input_resource *res)
+{
+	return OK;
+}
+
+static int feed_input_onewire(struct input_resource *res)
+{
+	return OK;
+}
+
+static pthread_addr_t sample_thread(pthread_addr_t arg)
+{
+	struct bscapp_data *priv = (struct bscapp_data *)arg;
+	struct input_resource *res = NULL;
+	int ret = 0;
+
+	while (!priv->exit_sample_thread) {
+		for (res = &input_map[0]; res->name != NULL; res++) {
+			switch (res->type) {
+				case INPUT_AI:
+					ret = feed_input_ai(res);
+					break;
+				case INPUT_DI_TEMPERATURE:
+					ret = feed_input_di_temperature(res);
+					break;
+				case INPUT_DI_HUMIDITY:
+					ret = feed_input_di_humidity(res);
+					break;
+				case INPUT_DI_COUNTER:
+					ret = feed_input_di_counter(res);
+					break;
+				case INPUT_DI_SWITCH:
+					ret = feed_input_di_switch(res);
+					break;
+				case INPUT_ONEWIRE:
+					ret = feed_input_onewire(res);
+					break;
+				default:
+					break;
+			}
+			if (ret < 0)
+				bsc_warn("sampling failure occured\n");
+		}
+		usleep(1000000);
+	}
+	bsc_info("exited.\n");
+	return NULL;
+}
+
+static int start_sample_thread(struct bscapp_data *priv)
+{
+	struct sched_param sparam;
+	pthread_attr_t attr;
+	int ret;
+
+	pthread_attr_init(&attr);
+	sparam.sched_priority = 50;
+	(void)pthread_attr_setschedparam(&attr, &sparam);
+	(void)pthread_attr_setstacksize(&attr, 2048);
+	pthread_setname_np(priv->tid_sample_thread, "sample_thread");
+
+	bsc_info("starting sample thread\n");
+	ret = pthread_create(&priv->tid_sample_thread, &attr, sample_thread, priv);
 	if (ret != OK) {
 		bsc_err("failed to create thread: %d\n", ret);
 		return -EFAULT;
@@ -578,7 +761,7 @@ static int bscapp_init(struct bscapp_data *priv)
 #elif BUILD_SPECIAL == BSCAPP_BUILD_DEV
 	sprintf(priv->uid, "864-dev");
 #else
-	sprintf(priv->uid, "864-%08x%08x%08x", uid_0_31, uid_32_63, uid_64_95);
+	sprintf(priv->uid, "864-%08x", uid_64_95);
 #endif
 	bsc_info("uid: %s\n", priv->uid);
 	sprintf(priv->topic_sub_header, "/down/bs/%s", priv->uid);
@@ -617,6 +800,7 @@ int bscapp_main(int argc, char *argv[])
 
 	bsc_info("entry\n");
 
+	bzero(priv, sizeof(struct bscapp_data));
 	bscapp_hw_init(priv);
 
 	wait_for_ip();
@@ -638,11 +822,14 @@ int bscapp_main(int argc, char *argv[])
 	} while (ret < 0);
 
 	start_mqttpub_thread(priv);
+	start_sample_thread(priv);
 
 	while (!priv->exit)
 		sleep(1);
 
 	pthread_join(priv->tid_mqttsub_thread, NULL);
+	pthread_join(priv->tid_mqttpub_thread, NULL);
+	pthread_join(priv->tid_sample_thread, NULL);
 	bscapp_deinit(priv);
 
 	bsc_info("exited\n");
