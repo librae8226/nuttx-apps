@@ -56,7 +56,7 @@
 #define URL_INET_ACCESS		"http://123.57.208.39:8080/config.json"
 #endif
 
-#define BSCAPP_UID_LEN		64
+#define BSCAPP_UID_LEN		16
 #define MQTT_BUF_MAX_LEN	128
 #define MQTT_CMD_TIMEOUT	1000
 #define MQTT_TOPIC_LEN		128
