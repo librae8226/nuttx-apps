@@ -957,7 +957,7 @@ int bscapp_main(int argc, char *argv[])
 		ret = sem_wait(&priv->sem);
 		if (ret != 0)
 			bsc_err("sem_wait failed\n");
-#if BUILD_SPECIAL == BSCAPP_BUILD_TEST || BUILD_SPECIAL == BSCAPP_BUILD_DEV
+#if BUILD_SPECIAL != BSCAPP_BUILD_RELEASE
 		selftest_mqtt(priv);
 #endif
 		start_mqttpub_thread(priv);
