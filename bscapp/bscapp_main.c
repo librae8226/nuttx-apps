@@ -3,7 +3,9 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <debug.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -11,23 +13,27 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <unistd.h>
 #include <time.h>
-#include <debug.h>
-#include <string.h>
+#include <unistd.h>
 
 #include <apps/netutils/netlib.h>
 #include <apps/netutils/webclient.h>
 #include <apps/netutils/MQTTClient.h>
 
+#define BSCAPP_BUILD_RELEASE	0
 #define BSCAPP_BUILD_TEST	1
 #define BSCAPP_BUILD_DEV	2
+
+#define MQTT_SELFPING_ENABLE
 
 /*
  * Comment out below lines to build release.
  */
 #define BUILD_SPECIAL		BSCAPP_BUILD_DEV
+
+#if BUILD_SPECIAL != BSCAPP_BUILD_RELEASE
 #define BSCAPP_DEBUG
+#endif
 
 #ifdef BSCAPP_DEBUG
 #define bsc_dbg(format, ...) \
@@ -59,26 +65,44 @@
 #define BSCAPP_UID_LEN		16
 #define MQTT_BUF_MAX_LEN	128
 #define MQTT_CMD_TIMEOUT	1000
+#define MQTT_SELFPING_TIMEOUT	10
+#define MQTT_SELFPING_INTERVAL  10
 #define MQTT_TOPIC_LEN		128
 #define MQTT_TOPIC_HEADER_LEN	64
 #define MQTT_SUBTOPIC_LEN	32
 
 struct bscapp_data {
+	/* mqtt */
 	Network n;
 	Client c;
-	sem_t sem;
+
+	/* workers */
 	pthread_t tid_mqttsub_thread;
 	pthread_t tid_mqttpub_thread;
 	pthread_t tid_sample_thread;
+
+	/* sync resources */
+	sem_t sem;
+	pthread_mutex_t exit_mutex;
+
+	/* flags */
+	volatile bool exit;
+	volatile bool exit_mqttsub_thread;
+	volatile bool exit_mqttpub_thread;
+	volatile bool exit_sample_thread;
+	volatile bool rework;
+
+	/* buffers and strings */
 	unsigned char buf[MQTT_BUF_MAX_LEN];
 	unsigned char readbuf[MQTT_BUF_MAX_LEN];
-	volatile int exit;
-	volatile int exit_mqttsub_thread;
-	volatile int exit_mqttpub_thread;
-	volatile int exit_sample_thread;
 	char uid[BSCAPP_UID_LEN];
 	char topic_sub_header[MQTT_TOPIC_HEADER_LEN];
 	char topic_pub_header[MQTT_TOPIC_HEADER_LEN];
+
+	/* self ping */
+	volatile bool selfping;
+	timer_t timer_sp;
+	sem_t sem_sp;
 };
 
 enum relays_e {
@@ -228,6 +252,11 @@ static int adc_ch_ai[ADC_CH_MAX] = {
 
 static struct bscapp_data g_priv;
 
+/* external functions */
+int adc_init(void);
+uint16_t adc_measure(unsigned int channel);
+void relays_setstat(int relays, bool stat);
+
 static void printstrbylen(char *msg, char *str, int len)
 {
 	int i;
@@ -360,9 +389,12 @@ static void msg_handler(MessageData *md)
 #endif
 	} else if (strcmp(token, "config") == 0) {
 		bsc_info("hit config\n");
-	} else if (strcmp(token, "exit") == 0) {
-		bsc_info("hit exit\n");
-		//g_priv.exit_mqttsub_thread = 1;
+	} else if (strcmp(token, "selfping") == 0) {
+		bsc_info("hit selfping\n");
+		g_priv.selfping = false;
+		ret = sem_post(&g_priv.sem_sp);
+		if (ret != 0)
+			bsc_err("sem_post failed\n");
 	} else {
 		bsc_info("unsupported: %s\n", token);
 	}
@@ -454,6 +486,8 @@ int bsc_mqtt_connect(struct bscapp_data *priv)
 {
 	int ret;
 
+	priv->selfping = false;
+
 	bsc_info("connecting to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
 	NewNetwork(&priv->n);
 	while (ConnectNetwork(&priv->n, MQTT_BROKER_IP, MQTT_BROKER_PORT) != OK) {
@@ -469,7 +503,7 @@ int bsc_mqtt_connect(struct bscapp_data *priv)
 	conn_data.clientID.cstring = priv->uid;
 	conn_data.username.cstring = NULL;
 	conn_data.password.cstring = NULL;
-	conn_data.keepAliveInterval = 10;
+	conn_data.keepAliveInterval = 30;
 	conn_data.cleansession = 1;
 
 	bsc_info("connecting mqtt...\n");
@@ -541,13 +575,41 @@ static int wait_for_internet(void)
 	return OK;
 }
 
+static int stop_thread(struct bscapp_data *priv, pthread_t tid, volatile bool *p_exit)
+{
+	int ret, result;
+	char name[32] = "null";
+
+	ret = pthread_mutex_lock(&priv->exit_mutex);
+	if (ret != 0)
+		bsc_err("failed to lock mutex: %d\n", ret);
+
+	*p_exit = true;
+
+	pthread_getname_np(tid, name);
+	bsc_info("stopping %s\n", name);
+	ret = pthread_join(tid, (pthread_addr_t *)&result);
+	if (ret != 0)
+		bsc_err("pthread_join failed, ret=%d, result=%d\n", ret, result);
+
+	*p_exit = false;
+
+	bsc_info("stopped %s()\n", name);
+
+	ret = pthread_mutex_unlock(&priv->exit_mutex);
+	if (ret != 0)
+		bsc_err("failed to unlock mutex: %d\n", ret);
+	return OK;
+}
+
 static pthread_addr_t mqttsub_thread(pthread_addr_t arg)
 {
 	struct bscapp_data *priv = (struct bscapp_data *)arg;
 	char t[MQTT_TOPIC_LEN];
 	sprintf(t, "%s/#", priv->topic_sub_header);
 	bsc_mqtt_subscribe(priv, t);
-	bsc_info("exited.\n");
+	sleep(1);
+	bsc_info("exiting\n");
 	return NULL;
 }
 
@@ -561,7 +623,6 @@ static int start_mqttsub_thread(struct bscapp_data *priv)
 	sparam.sched_priority = 50;
 	(void)pthread_attr_setschedparam(&attr, &sparam);
 	(void)pthread_attr_setstacksize(&attr, 2048);
-	pthread_setname_np(priv->tid_mqttsub_thread, "mqttsub_thread");
 
 	bsc_info("starting mqttsub thread\n");
 	ret = pthread_create(&priv->tid_mqttsub_thread, &attr, mqttsub_thread, priv);
@@ -569,6 +630,7 @@ static int start_mqttsub_thread(struct bscapp_data *priv)
 		bsc_err("failed to create thread: %d\n", ret);
 		return -EFAULT;
 	}
+	pthread_setname_np(priv->tid_mqttsub_thread, "mqttsub_thread");
 
 	return ret;
 }
@@ -579,6 +641,13 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 	char t[MQTT_TOPIC_LEN];
 	char payload[8];
 	struct input_resource *res = NULL;
+	int ret;
+
+	do {
+		ret = bsc_mqtt_publish(priv, "/up/bs/checkin", priv->uid);
+		if (ret < 0)
+			bsc_warn("checkin failed: %d, retry", ret);
+	} while (ret < 0);
 
 	while (!priv->exit_mqttpub_thread) {
 		res = &input_map[0];
@@ -591,9 +660,15 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 			sprintf(payload, "%d", res->value);
 			bsc_mqtt_publish(priv, t, payload);
 		}
+		if (priv->selfping == true) {
+			sprintf(t, "%s/selfping", priv->topic_sub_header);
+			sprintf(payload, "%s", "ping");
+			bsc_mqtt_publish(priv, t, payload);
+		}
 		sleep(1);
 	}
-	bsc_info("exited.\n");
+	sleep(1);
+	bsc_info("exiting\n");
 	return NULL;
 }
 
@@ -607,7 +682,6 @@ static int start_mqttpub_thread(struct bscapp_data *priv)
 	sparam.sched_priority = 50;
 	(void)pthread_attr_setschedparam(&attr, &sparam);
 	(void)pthread_attr_setstacksize(&attr, 2048);
-	pthread_setname_np(priv->tid_mqttpub_thread, "mqttpub_thread");
 
 	bsc_info("starting mqttpub thread\n");
 	ret = pthread_create(&priv->tid_mqttpub_thread, &attr, mqttpub_thread, priv);
@@ -615,6 +689,7 @@ static int start_mqttpub_thread(struct bscapp_data *priv)
 		bsc_err("failed to create thread: %d\n", ret);
 		return -EFAULT;
 	}
+	pthread_setname_np(priv->tid_mqttpub_thread, "mqttpub_thread");
 
 	return ret;
 }
@@ -702,7 +777,8 @@ static pthread_addr_t sample_thread(pthread_addr_t arg)
 		}
 		usleep(1000000);
 	}
-	bsc_info("exited.\n");
+	sleep(1);
+	bsc_info("exiting\n");
 	return NULL;
 }
 
@@ -716,7 +792,6 @@ static int start_sample_thread(struct bscapp_data *priv)
 	sparam.sched_priority = 50;
 	(void)pthread_attr_setschedparam(&attr, &sparam);
 	(void)pthread_attr_setstacksize(&attr, 2048);
-	pthread_setname_np(priv->tid_sample_thread, "sample_thread");
 
 	bsc_info("starting sample thread\n");
 	ret = pthread_create(&priv->tid_sample_thread, &attr, sample_thread, priv);
@@ -724,6 +799,7 @@ static int start_sample_thread(struct bscapp_data *priv)
 		bsc_err("failed to create thread: %d\n", ret);
 		return -EFAULT;
 	}
+	pthread_setname_np(priv->tid_sample_thread, "sample_thread");
 
 	return ret;
 }
@@ -751,11 +827,13 @@ static int bscapp_init(struct bscapp_data *priv)
 
 	bzero(priv, sizeof(struct bscapp_data));
 	sem_init(&priv->sem, 0, 0);
+	pthread_mutex_init(&priv->exit_mutex, NULL);
 
+#if 0
 	uint32_t uid_0_31 = (*(volatile uint32_t *)(0x1ffff7e8));
 	uint32_t uid_32_63 = (*(volatile uint32_t *)(0x1ffff7e8 + 4));
+#endif
 	uint32_t uid_64_95 = (*(volatile uint32_t *)(0x1ffff7e8 + 8));
-
 #if BUILD_SPECIAL == BSCAPP_BUILD_TEST
 	sprintf(priv->uid, "864-test");
 #elif BUILD_SPECIAL == BSCAPP_BUILD_DEV
@@ -769,8 +847,6 @@ static int bscapp_init(struct bscapp_data *priv)
 	bsc_info("sub: %s\n", priv->topic_sub_header);
 	bsc_info("pub: %s\n", priv->topic_pub_header);
 
-	bsc_mqtt_connect(priv);
-
 	bsc_dbg("out\n");
 	return OK;
 }
@@ -778,7 +854,6 @@ static int bscapp_init(struct bscapp_data *priv)
 static int bscapp_deinit(struct bscapp_data *priv)
 {
 	bsc_dbg("in\n");
-	bsc_mqtt_disconnect(priv);
 	bsc_dbg("out\n");
 	return OK;
 }
@@ -787,6 +862,74 @@ static int bscapp_hw_init(struct bscapp_data *priv)
 {
 	adc_init();
 	return OK;
+}
+
+static void selfping_timeout(int signo, siginfo_t *info, void *ucontext)
+{
+	bsc_err("signo: %d\n", signo);
+	g_priv.rework = true;
+}
+
+static int bsc_timer_stop(timer_t timer_id)
+{
+	int ret;
+	struct sigaction act, oact;
+
+	bsc_dbg("deleting timer\n" );
+	ret = timer_delete(timer_id);
+	if (ret != OK)
+		bsc_err("timer_delete() failed, ret=%d\n", ret);
+
+	act.sa_sigaction = SIG_DFL;
+	ret = sigaction(SIGALRM, &act, &oact);
+	if (ret != OK)
+		bsc_err("sigaction() failed, ret=%d\n", ret);
+
+	bsc_dbg("done\n" );
+	return ret;
+}
+
+static int bsc_timer_start(timer_t *p_timer_id, int tsec, void (*timer_cb)(int, siginfo_t *, void *))
+{
+	struct sigaction act, oact;
+	struct itimerspec timer;
+	int ret;
+
+	if (tsec <= 0 || timer_cb == NULL)
+		return -EINVAL;
+
+	bsc_dbg("registering signal handler\n" );
+	act.sa_sigaction = timer_cb;
+	act.sa_flags  = SA_SIGINFO;
+
+	ret = sigaction(SIGALRM, &act, &oact);
+	if (ret != OK) {
+		bsc_err("sigaction() failed, ret=%d\n", ret);
+	}
+
+	bsc_dbg("creating timer\n" );
+	ret = timer_create(CLOCK_REALTIME, NULL, p_timer_id);
+	if (ret != OK) {
+		bsc_err("timer_create() failed, ret=%d\n", ret);
+		goto err_out_timer_create;
+	}
+
+	bsc_dbg("starting timer\n" );
+
+	timer.it_value.tv_sec     = tsec;
+	timer.it_value.tv_nsec    = 0;
+
+	ret = timer_settime(*p_timer_id, 0, &timer, NULL);
+	if (ret != OK) {
+		bsc_err("timer_settime() failed, ret=%d\n", ret);
+		goto err_out_timer_settime;
+	}
+	return OK;
+
+err_out_timer_settime:
+	bsc_timer_stop(*p_timer_id);
+err_out_timer_create:
+	return ERROR;
 }
 
 #ifdef CONFIG_BUILD_KERNEL
@@ -802,34 +945,55 @@ int bscapp_main(int argc, char *argv[])
 
 	bzero(priv, sizeof(struct bscapp_data));
 	bscapp_hw_init(priv);
-
-	wait_for_ip();
-	wait_for_internet();
 	bscapp_init(priv);
 
-	start_mqttsub_thread(priv);
+	wait_for_ip();
 
-	ret = sem_wait(&priv->sem);
-	if (ret != 0)
-		bsc_err("sem_wait failed\n");
-#if BUILD_SPECIAL == BSCAPP_BUILD_TEST || BUILD_SPECIAL == BSCAPP_BUILD_DEV
-	selftest_mqtt(priv);
-#endif
 	do {
-		ret = bsc_mqtt_publish(priv, "/up/bs/checkin", priv->uid);
-		if (ret < 0)
-			bsc_warn("checkin failed: %d, retry", ret);
-	} while (ret < 0);
+		wait_for_internet();
+		bsc_mqtt_connect(priv);
+		start_mqttsub_thread(priv);
 
-	start_mqttpub_thread(priv);
-	start_sample_thread(priv);
+		ret = sem_wait(&priv->sem);
+		if (ret != 0)
+			bsc_err("sem_wait failed\n");
+#if BUILD_SPECIAL == BSCAPP_BUILD_TEST || BUILD_SPECIAL == BSCAPP_BUILD_DEV
+		selftest_mqtt(priv);
+#endif
+		start_mqttpub_thread(priv);
+		start_sample_thread(priv);
 
-	while (!priv->exit)
+		while (!priv->rework) {
+#ifdef MQTT_SELFPING_ENABLE
+			sem_init(&priv->sem_sp, 0, 0);
+			bsc_timer_start(&priv->timer_sp, MQTT_SELFPING_TIMEOUT, selfping_timeout);
+			priv->selfping = true;
+			bsc_dbg("waiting on semaphore\n" );
+			ret = sem_wait(&priv->sem_sp);
+			if (ret != 0) {
+				if (errno == EINTR)
+					bsc_err("sem_wait() interrupted by signal, timeout\n" );
+				else
+					bsc_warn("sem_wait() unexpectedly interrupted\n" );
+			} else {
+				bsc_dbg("sem_wait() awaken normally\n" );
+			}
+			sem_destroy(&priv->sem_sp);
+			bsc_timer_stop(priv->timer_sp);
+#endif
+			sleep(MQTT_SELFPING_INTERVAL);
+		}
+		priv->rework = false;
+
+		bsc_warn("prepare to rework\n");
+		stop_thread(priv, priv->tid_mqttsub_thread, &priv->exit_mqttsub_thread);
+		stop_thread(priv, priv->tid_mqttpub_thread, &priv->exit_mqttpub_thread);
+		stop_thread(priv, priv->tid_sample_thread, &priv->exit_sample_thread);
+		bsc_mqtt_disconnect(priv);
+		bsc_info("---------- cut off ----------\n\n");
 		sleep(1);
+	} while (!priv->exit);
 
-	pthread_join(priv->tid_mqttsub_thread, NULL);
-	pthread_join(priv->tid_mqttpub_thread, NULL);
-	pthread_join(priv->tid_sample_thread, NULL);
 	bscapp_deinit(priv);
 
 	bsc_info("exited\n");

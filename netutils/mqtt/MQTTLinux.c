@@ -80,13 +80,14 @@ int linux_read(Network * n, unsigned char *buffer, int len, int timeout_ms)
   while (bytes < len)
     {
       int rc = recv(n->my_socket, &buffer[bytes], (size_t) (len - bytes), 0);
-      if (rc == -1)
+      if (rc <= 0)
         {
-          if (errno != ENOTCONN && errno != ECONNRESET)
+          if (rc == 0 || rc == -ENOTCONN || rc == -ECONNRESET)
             {
-              bytes = -1;
-              break;
+              ndbg("fatal recv error, rc: %d, errno: %d\n", rc, errno);
             }
+          bytes = -1;
+          break;
         }
       else
         bytes += rc;
@@ -102,7 +103,7 @@ int linux_write(Network * n, unsigned char *buffer, int len, int timeout_ms)
   tv.tv_usec = timeout_ms * 1000;       // Not init'ing this can cause strange
                                         // errors
 
-  setsockopt(n->my_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,
+  setsockopt(n->my_socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv,
              sizeof(struct timeval));
   int rc = write(n->my_socket, buffer, len);
   return rc;

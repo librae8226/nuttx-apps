@@ -212,6 +212,8 @@ int keepalive(Client* c)
                 c->ping_outstanding = 1;
 		nvdbg("pingreq\n");
 	    }
+	    else
+		ndbg("pingreq failed!\n");
         }
     }
 
@@ -223,7 +225,7 @@ exit:
 int cycle(Client* c, Timer* timer)
 {
     // read the socket, see what work is due
-    unsigned short packet_type = readPacket(c, timer);
+    int packet_type = readPacket(c, timer);
 
     int len = 0,
         rc = SUCCESS;
