@@ -111,9 +111,11 @@ void nsh_initialize(void)
   (void)boardctl(BOARDIOC_INIT, 0);
 #endif
 
+#ifndef CONFIG_BSCAPP
   /* Bring up the network */
 
   (void)nsh_netinit();
+#endif
 
 #if defined(CONFIG_NSH_READLINE) && defined(CONFIG_READLINE_TABCOMPLETION)
   /* Configure the NSH prompt */

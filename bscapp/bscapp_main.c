@@ -923,9 +923,11 @@ int bscapp_main(int argc, char *argv[])
 	bscapp_hw_init(priv);
 	bscapp_init(priv);
 
-	wait_for_ip();
 
 	do {
+		nsh_netinit();
+		wait_for_ip();
+		nsh_telnetstart();
 		wait_for_internet();
 		bsc_mqtt_connect(priv);
 		start_mqttsub_thread(priv);

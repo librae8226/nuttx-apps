@@ -156,6 +156,7 @@ int nsh_main(int argc, char *argv[])
    * Telnet daemon.
    */
 
+#ifndef CONFIG_BSCAPP
 #ifdef CONFIG_NSH_TELNET
   ret = nsh_telnetstart();
   if (ret < 0)
@@ -167,6 +168,7 @@ int nsh_main(int argc, char *argv[])
      fprintf(stderr, "ERROR: Failed to start TELNET daemon: %d\n", ret);
      exitval = 1;
    }
+#endif
 #endif
 
   /* If the serial console front end is selected, then run it on this thread */
