@@ -37,7 +37,7 @@
 
 #ifdef BSCAPP_DEBUG
 #define bsc_dbg(format, ...) \
-	syslog(LOG_DEBUG, EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
+	syslog(LOG_DEBUG, "D/"EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
 #define bsc_printf(format, ...) \
 	printf(format, ##__VA_ARGS__)
 #else
@@ -46,11 +46,11 @@
 #endif
 
 #define bsc_info(format, ...) \
-	syslog(LOG_INFO, EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
+	syslog(LOG_INFO, "I/"EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
 #define bsc_warn(format, ...) \
-	syslog(LOG_WARNING, EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
+	syslog(LOG_WARNING, "W/"EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
 #define bsc_err(format, ...) \
-	syslog(LOG_ERR, EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
+	syslog(LOG_ERR, "E/"EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
 
 #if BUILD_SPECIAL == BSCAPP_BUILD_TEST
 #define MQTT_BROKER_IP		"123.57.208.39"
@@ -280,7 +280,7 @@ static int exec_match_output(char *subtopic, char *act)
 	struct output_resource *res = NULL;
 
 	if (subtopic == NULL) {
-		bsc_info("no subtopic\n", subtopic);
+		bsc_error("no subtopic\n", subtopic);
 		return -EINVAL;
 	}
 
@@ -302,10 +302,10 @@ static int exec_match_output(char *subtopic, char *act)
 					}
 					break;
 				case OUTPUT_PWM:
-					bsc_info("hit pwm\n");
+					bsc_dbg("hit pwm\n");
 					break;
 				default:
-					bsc_info("hit default\n");
+					bsc_dbg("hit default\n");
 					ret = -ENOENT;
 					break;
 			}
@@ -363,40 +363,16 @@ static void msg_handler(MessageData *md)
 		ret = exec_match_output(token, payload);
 		if (ret != OK)
 			bsc_warn("unsupported output %s with payload: %s\n", token, payload);
-#if 0
-		if (strcmp(token, "relay") == 0) {
-			token = strtok(NULL, "/");
-			bsc_info("hit relay: %s\n", token);
-			idx = atoi(token);
-			if (idx >= RELAY_MIN && idx <= RELAY_MAX) {
-				if (strcmp(payload, "on") == 0) {
-					bsc_info("ACT relay: %s\n", payload);
-					relays_setstat(idx - 1, true);
-				} else if (strcmp(payload, "off") == 0) {
-					bsc_info("ACT relay: %s\n", payload);
-					relays_setstat(idx - 1, false);
-				} else {
-					bsc_info("unsupported: %s\n", payload);
-				}
-			} else {
-				bsc_info("idx %d invalid\n", idx);
-			}
-		} else if (strcmp(token, "pwm") == 0) {
-			bsc_info("hit pwm\n");
-		} else {
-			bsc_info("unsupported: %s\n", token);
-		}
-#endif
 	} else if (strcmp(token, "config") == 0) {
-		bsc_info("hit config\n");
+		bsc_dbg("hit config\n");
 	} else if (strcmp(token, "selfping") == 0) {
-		bsc_info("hit selfping\n");
+		bsc_dbg("hit selfping\n");
 		g_priv.selfping = false;
 		ret = sem_post(&g_priv.sem_sp);
 		if (ret != 0)
 			bsc_err("sem_post failed\n");
 	} else {
-		bsc_info("unsupported: %s\n", token);
+		bsc_warn("unsupported: %s\n", token);
 	}
 }
 
@@ -436,7 +412,7 @@ int bsc_mqtt_subscribe(struct bscapp_data *priv, char *topic)
 	while (!priv->exit_mqttsub_thread) {
 		ret = MQTTYield(&priv->c, 1000);
 		if (ret < 0)
-			bsc_warn("yield failed, ret: %d\n", ret);
+			bsc_dbg("yield ret: %d\n", ret);
 	}
 
 	return OK;
@@ -475,7 +451,7 @@ int bsc_mqtt_publish(struct bscapp_data *priv, char *topic, char *payload)
 		if (msg.qos > 0) {
 			ret = MQTTYield(&priv->c, 100);
 			if (ret < 0)
-				bsc_warn("yield failed, ret: %d\n", ret);
+				bsc_dbg("yield ret: %d\n", ret);
 		}
 	}
 
@@ -587,7 +563,7 @@ static int stop_thread(struct bscapp_data *priv, pthread_t tid, volatile bool *p
 	*p_exit = true;
 
 	pthread_getname_np(tid, name);
-	bsc_info("stopping %s\n", name);
+	bsc_info("stopping %s()\n", name);
 	ret = pthread_join(tid, (pthread_addr_t *)&result);
 	if (ret != 0)
 		bsc_err("pthread_join failed, ret=%d, result=%d\n", ret, result);
