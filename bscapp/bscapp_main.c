@@ -66,7 +66,7 @@
 #define MQTT_BUF_MAX_LEN	128
 #define MQTT_CMD_TIMEOUT	1000
 #define MQTT_SELFPING_TIMEOUT	10
-#define MQTT_SELFPING_INTERVAL  10
+#define MQTT_SELFPING_INTERVAL  20
 #define MQTT_TOPIC_LEN		128
 #define MQTT_TOPIC_HEADER_LEN	64
 #define MQTT_SUBTOPIC_LEN	32
@@ -262,10 +262,10 @@ static void printstrbylen(char *msg, char *str, int len)
 	int i;
 	if (str == NULL)
 		return;
-	bsc_info("%s (%d): ", msg, len);
+	bsc_dbg("%s (%d): ", msg, len);
 	for (i = 0; i < len; i++)
 		bsc_printf("%c", str[i]);
-	printf("\n");
+	bsc_printf("\n");
 #if 0
 	printf("\t");
 	for (i = 0; i < len; i++)
@@ -280,7 +280,7 @@ static int exec_match_output(char *subtopic, char *act)
 	struct output_resource *res = NULL;
 
 	if (subtopic == NULL) {
-		bsc_error("no subtopic\n", subtopic);
+		bsc_err("no subtopic\n", subtopic);
 		return -EINVAL;
 	}
 
@@ -376,6 +376,29 @@ static void msg_handler(MessageData *md)
 	}
 }
 
+void mqttpub_job(struct bscapp_data *priv)
+{
+	char t[MQTT_TOPIC_LEN];
+	char payload[8];
+	struct input_resource *res = NULL;
+
+	res = &input_map[0];
+	for (; res->name != NULL; res++) {
+		if (res->valid == false) {
+			bsc_dbg("%s isn't valid, continue\n", res->name);
+			continue;
+		}
+		sprintf(t, "%s%s", priv->topic_pub_header, res->st);
+		sprintf(payload, "%d", res->value);
+		bsc_mqtt_publish(priv, t, payload);
+	}
+	if (priv->selfping == true) {
+		sprintf(t, "%s/selfping", priv->topic_sub_header);
+		sprintf(payload, "%s", "p");
+		bsc_mqtt_publish(priv, t, payload);
+	}
+}
+
 int bsc_mqtt_subscribe(struct bscapp_data *priv, char *topic)
 {
 	int ret = 0;
@@ -413,6 +436,7 @@ int bsc_mqtt_subscribe(struct bscapp_data *priv, char *topic)
 		ret = MQTTYield(&priv->c, 1000);
 		if (ret < 0)
 			bsc_dbg("yield ret: %d\n", ret);
+		mqttpub_job(priv);
 	}
 
 	return OK;
@@ -582,6 +606,7 @@ static pthread_addr_t mqttsub_thread(pthread_addr_t arg)
 {
 	struct bscapp_data *priv = (struct bscapp_data *)arg;
 	char t[MQTT_TOPIC_LEN];
+	bsc_info("running\n");
 	sprintf(t, "%s/#", priv->topic_sub_header);
 	bsc_mqtt_subscribe(priv, t);
 	sleep(1);
@@ -619,6 +644,8 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 	struct input_resource *res = NULL;
 	int ret;
 
+	bsc_info("running\n");
+
 	do {
 		ret = bsc_mqtt_publish(priv, "/up/bs/checkin", priv->uid);
 		if (ret < 0)
@@ -626,6 +653,7 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 	} while (ret < 0);
 
 	while (!priv->exit_mqttpub_thread) {
+#if 0
 		res = &input_map[0];
 		for (; res->name != NULL; res++) {
 			if (res->valid == false) {
@@ -638,9 +666,10 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 		}
 		if (priv->selfping == true) {
 			sprintf(t, "%s/selfping", priv->topic_sub_header);
-			sprintf(payload, "%s", "ping");
+			sprintf(payload, "%s", "p");
 			bsc_mqtt_publish(priv, t, payload);
 		}
+#endif
 		sleep(1);
 	}
 	sleep(1);
@@ -723,6 +752,8 @@ static pthread_addr_t sample_thread(pthread_addr_t arg)
 	struct bscapp_data *priv = (struct bscapp_data *)arg;
 	struct input_resource *res = NULL;
 	int ret = 0;
+
+	bsc_info("running\n");
 
 	while (!priv->exit_sample_thread) {
 		for (res = &input_map[0]; res->name != NULL; res++) {
@@ -927,7 +958,7 @@ int bscapp_main(int argc, char *argv[])
 	do {
 		nsh_netinit();
 		wait_for_ip();
-		nsh_telnetstart();
+//		nsh_telnetstart();
 		wait_for_internet();
 		bsc_mqtt_connect(priv);
 		start_mqttsub_thread(priv);
