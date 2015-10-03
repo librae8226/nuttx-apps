@@ -24,7 +24,11 @@
 #define BSCAPP_BUILD_TEST	1
 #define BSCAPP_BUILD_DEV	2
 
+/*
+ * Experiment features for improvement.
+ */
 #define MQTT_SELFPING_ENABLE
+#define MQTT_MUTEX_ENABLE
 
 /*
  * Comment out below lines to build release.
@@ -83,7 +87,8 @@ struct bscapp_data {
 
 	/* sync resources */
 	sem_t sem;
-	pthread_mutex_t exit_mutex;
+	pthread_mutex_t mutex_exit;
+	pthread_mutex_t mutex_mqtt;
 
 	/* flags */
 	volatile bool exit;
@@ -99,10 +104,12 @@ struct bscapp_data {
 	char topic_sub_header[MQTT_TOPIC_HEADER_LEN];
 	char topic_pub_header[MQTT_TOPIC_HEADER_LEN];
 
+#ifdef MQTT_SELFPING_ENABLE
 	/* self ping */
 	volatile bool selfping;
 	timer_t timer_sp;
 	sem_t sem_sp;
+#endif
 };
 
 enum relays_e {
@@ -256,6 +263,8 @@ static struct bscapp_data g_priv;
 int adc_init(void);
 uint16_t adc_measure(unsigned int channel);
 void relays_setstat(int relays, bool stat);
+int nsh_netinit(void);
+int nsh_telnetstart(void);
 
 static void printstrbylen(char *msg, char *str, int len)
 {
@@ -365,37 +374,16 @@ static void msg_handler(MessageData *md)
 			bsc_warn("unsupported output %s with payload: %s\n", token, payload);
 	} else if (strcmp(token, "config") == 0) {
 		bsc_dbg("hit config\n");
+#ifdef MQTT_SELFPING_ENABLE
 	} else if (strcmp(token, "selfping") == 0) {
 		bsc_dbg("hit selfping\n");
 		g_priv.selfping = false;
 		ret = sem_post(&g_priv.sem_sp);
 		if (ret != 0)
 			bsc_err("sem_post failed\n");
+#endif
 	} else {
 		bsc_warn("unsupported: %s\n", token);
-	}
-}
-
-void mqttpub_job(struct bscapp_data *priv)
-{
-	char t[MQTT_TOPIC_LEN];
-	char payload[8];
-	struct input_resource *res = NULL;
-
-	res = &input_map[0];
-	for (; res->name != NULL; res++) {
-		if (res->valid == false) {
-			bsc_dbg("%s isn't valid, continue\n", res->name);
-			continue;
-		}
-		sprintf(t, "%s%s", priv->topic_pub_header, res->st);
-		sprintf(payload, "%d", res->value);
-		bsc_mqtt_publish(priv, t, payload);
-	}
-	if (priv->selfping == true) {
-		sprintf(t, "%s/selfping", priv->topic_sub_header);
-		sprintf(payload, "%s", "p");
-		bsc_mqtt_publish(priv, t, payload);
 	}
 }
 
@@ -433,10 +421,21 @@ int bsc_mqtt_subscribe(struct bscapp_data *priv, char *topic)
 	}
 
 	while (!priv->exit_mqttsub_thread) {
+#ifdef MQTT_MUTEX_ENABLE
+		ret = pthread_mutex_lock(&priv->mutex_mqtt);
+		if (ret != 0)
+			bsc_err("failed to lock mutex: %d\n", ret);
+#endif
+
 		ret = MQTTYield(&priv->c, 1000);
 		if (ret < 0)
 			bsc_dbg("yield ret: %d\n", ret);
-		mqttpub_job(priv);
+
+#ifdef MQTT_MUTEX_ENABLE
+		ret = pthread_mutex_unlock(&priv->mutex_mqtt);
+		if (ret != 0)
+			bsc_err("failed to unlock mutex: %d\n", ret);
+#endif
 	}
 
 	return OK;
@@ -468,6 +467,12 @@ int bsc_mqtt_publish(struct bscapp_data *priv, char *topic, char *payload)
 
 	/* TODO ensure mqtt connection is alive */
 
+#ifdef MQTT_MUTEX_ENABLE
+	ret = pthread_mutex_lock(&priv->mutex_mqtt);
+	if (ret != 0)
+		bsc_err("failed to lock mutex: %d\n", ret);
+#endif
+
 	ret = MQTTPublish(&priv->c, topic, &msg);
 	if (ret != 0) {
 		bsc_err("error publish, ret: %d\n", ret);
@@ -479,6 +484,12 @@ int bsc_mqtt_publish(struct bscapp_data *priv, char *topic, char *payload)
 		}
 	}
 
+#ifdef MQTT_MUTEX_ENABLE
+	ret = pthread_mutex_unlock(&priv->mutex_mqtt);
+	if (ret != 0)
+		bsc_err("failed to unlock mutex: %d\n", ret);
+#endif
+
 	return ret;
 }
 
@@ -486,7 +497,9 @@ int bsc_mqtt_connect(struct bscapp_data *priv)
 {
 	int ret;
 
+#ifdef MQTT_SELFPING_ENABLE
 	priv->selfping = false;
+#endif
 
 	bsc_info("connecting to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
 	NewNetwork(&priv->n);
@@ -580,7 +593,7 @@ static int stop_thread(struct bscapp_data *priv, pthread_t tid, volatile bool *p
 	int ret, result;
 	char name[32] = "null";
 
-	ret = pthread_mutex_lock(&priv->exit_mutex);
+	ret = pthread_mutex_lock(&priv->mutex_exit);
 	if (ret != 0)
 		bsc_err("failed to lock mutex: %d\n", ret);
 
@@ -596,7 +609,7 @@ static int stop_thread(struct bscapp_data *priv, pthread_t tid, volatile bool *p
 
 	bsc_info("stopped %s()\n", name);
 
-	ret = pthread_mutex_unlock(&priv->exit_mutex);
+	ret = pthread_mutex_unlock(&priv->mutex_exit);
 	if (ret != 0)
 		bsc_err("failed to unlock mutex: %d\n", ret);
 	return OK;
@@ -653,7 +666,6 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 	} while (ret < 0);
 
 	while (!priv->exit_mqttpub_thread) {
-#if 0
 		res = &input_map[0];
 		for (; res->name != NULL; res++) {
 			if (res->valid == false) {
@@ -664,6 +676,7 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 			sprintf(payload, "%d", res->value);
 			bsc_mqtt_publish(priv, t, payload);
 		}
+#ifdef MQTT_SELFPING_ENABLE
 		if (priv->selfping == true) {
 			sprintf(t, "%s/selfping", priv->topic_sub_header);
 			sprintf(payload, "%s", "p");
@@ -834,7 +847,8 @@ static int bscapp_init(struct bscapp_data *priv)
 
 	bzero(priv, sizeof(struct bscapp_data));
 	sem_init(&priv->sem, 0, 0);
-	pthread_mutex_init(&priv->exit_mutex, NULL);
+	pthread_mutex_init(&priv->mutex_exit, NULL);
+	pthread_mutex_init(&priv->mutex_mqtt, NULL);
 
 #if 0
 	uint32_t uid_0_31 = (*(volatile uint32_t *)(0x1ffff7e8));
@@ -861,6 +875,9 @@ static int bscapp_init(struct bscapp_data *priv)
 static int bscapp_deinit(struct bscapp_data *priv)
 {
 	bsc_dbg("in\n");
+	pthread_mutex_destroy(&priv->mutex_mqtt);
+	pthread_mutex_destroy(&priv->mutex_exit);
+	sem_destroy(&priv->sem);
 	bsc_dbg("out\n");
 	return OK;
 }
@@ -871,11 +888,13 @@ static int bscapp_hw_init(struct bscapp_data *priv)
 	return OK;
 }
 
+#ifdef MQTT_SELFPING_ENABLE
 static void selfping_timeout(int signo, siginfo_t *info, void *ucontext)
 {
 	bsc_err("signo: %d\n", signo);
 	g_priv.rework = true;
 }
+#endif
 
 static int bsc_timer_stop(timer_t timer_id)
 {
@@ -989,8 +1008,9 @@ int bscapp_main(int argc, char *argv[])
 			}
 			sem_destroy(&priv->sem_sp);
 			bsc_timer_stop(priv->timer_sp);
+			sleep(MQTT_SELFPING_INTERVAL - 1);
 #endif
-			sleep(MQTT_SELFPING_INTERVAL);
+			sleep(1);
 		}
 		priv->rework = false;
 
