@@ -68,6 +68,9 @@ static int dns_gethostip(FAR char *hostname, FAR union ip_addr_u *ipaddr,
   return OK;
 }
 
+#define _info(format, ...) \
+	syslog(LOG_INFO, "I/"EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
+
 #ifdef CONFIG_BUILD_KERNEL
 int main(int argc, FAR char *argv[])
 #else
@@ -79,12 +82,10 @@ int sockettest_main(int argc, char *argv[])
 	char buffer[256];
 
 	printf("%s, in\n", __func__);
-
 	if (argc < 3) {
 		fprintf(stderr,"usage %s hostname port\n", argv[0]);
 		return -1;
 	}
-
 	bzero((char *) &serv_addr, sizeof(serv_addr));
 
 	portno = atoi(argv[2]);
@@ -134,7 +135,9 @@ int sockettest_main(int argc, char *argv[])
 	printf("%s, 5\n", __func__);
 
 	bzero(buffer,256);
+	_info("before read()\n");
 	n = read(sockfd,buffer,255);
+	_info("after read()\n");
 	if (n < 0)
 		printf("ERROR reading from socket, n: %d\n", n);
 	printf("%s\n",buffer);
