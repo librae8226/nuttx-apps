@@ -427,7 +427,7 @@ int bsc_mqtt_subscribe(struct bscapp_data *priv, char *topic)
 			bsc_err("failed to lock mutex: %d\n", ret);
 #endif
 
-		ret = MQTTYield(&priv->c, 1000);
+		ret = MQTTYield(&priv->c, 100);
 		if (ret < 0)
 			bsc_dbg("yield ret: %d\n", ret);
 
@@ -826,9 +826,9 @@ static int start_sample_thread(struct bscapp_data *priv)
 
 static int selftest_mqtt(struct bscapp_data *priv)
 {
+#if 0
 	int i;
 	char t[MQTT_TOPIC_LEN] = {0};
-
 	for (i = RELAY_MIN; i <= RELAY_MAX; i++) {
 		sprintf(t, "%s/output/RELAY%d", priv->topic_sub_header, i);
 		bsc_mqtt_publish(priv, t, "on");
@@ -837,7 +837,7 @@ static int selftest_mqtt(struct bscapp_data *priv)
 		sprintf(t, "%s/output/RELAY%d", priv->topic_sub_header, i);
 		bsc_mqtt_publish(priv, t, "off");
 	}
-
+#endif
 	return OK;
 }
 
