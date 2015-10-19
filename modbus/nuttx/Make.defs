@@ -33,7 +33,7 @@
 #
 ############################################################################
 
-CSRCS += portevent.c portother.c portserial.c porttimer.c
+CSRCS += portevent.c portother.c portserial.c porttimer.c porttcp.c
 
 DEPPATH += --dep-path nuttx
 VPATH += :nuttx

@@ -181,6 +181,7 @@ bool xMBTCPPortInit(uint16_t usTCPPort);
 void vMBTCPPortClose(void);
 #endif
 void vMBTCPPortDisable(void);
+bool xMBPortTCPPool(void);
 bool xMBTCPPortGetRequest(uint8_t **ppucMBTCPFrame, uint16_t * usTCPLength);
 bool xMBTCPPortSendResponse(const uint8_t *pucMBTCPFrame, uint16_t usTCPLength);
 #endif

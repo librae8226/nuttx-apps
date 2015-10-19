@@ -66,6 +66,17 @@ extern "C"
  * Public Types
  ****************************************************************************/
 
+typedef int		SOCKET;
+
+#define SOCKET_ERROR	(-1)
+#define INVALID_SOCKET	(~0)
+typedef bool		BOOL;
+typedef int8_t		CHAR;
+typedef uint8_t		UCHAR;
+typedef uint8_t		BYTE;
+typedef int16_t		SHORT;
+typedef uint16_t	USHORT;
+
 typedef enum
 {
   MB_LOG_ERROR = 0,

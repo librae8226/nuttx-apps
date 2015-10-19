@@ -36,6 +36,7 @@
 #include <nuttx/config.h>
 #include <stdlib.h>
 #include <string.h>
+#include <debug.h>
 
 #include <apps/modbus/mb.h>
 
@@ -95,13 +96,17 @@ eMBErrorCode eMBTCPDoInit(uint16_t ucTCPPort)
 
 void eMBTCPStart(void)
 {
+  ndbg("in\n");
+  ndbg("out\n");
 }
 
 void eMBTCPStop(void)
 {
+  ndbg("in\n");
    /* Make sure that no more clients are connected. */
 
   vMBTCPPortDisable();
+  ndbg("out\n");
 }
 
 eMBErrorCode eMBTCPReceive(uint8_t *pucRcvAddress, uint8_t **ppucFrame, uint16_t *pusLength)

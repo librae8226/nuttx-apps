@@ -83,6 +83,9 @@ bool xMBPortEventGet(eMBEventType * eEvent)
 
       (void)xMBPortSerialPoll();
 
+      /* Poll TCP */
+      xMBPortTCPPool();
+
       /* Check if any of the timers have expired. */
 
       vMBPortTimerPoll();

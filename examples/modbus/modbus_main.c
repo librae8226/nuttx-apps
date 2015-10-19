@@ -189,12 +189,11 @@ static inline int modbus_initialize(void)
    * CONFIG_EXAMPLES_MODBUS_PARITY = parity, default=MB_PAR_EVEN
    */
 
-  mberr = eMBInit(MB_RTU, 0x0a, CONFIG_EXAMPLES_MODBUS_PORT,
-                  CONFIG_EXAMPLES_MODBUS_BAUD, CONFIG_EXAMPLES_MODBUS_PARITY);
+  mberr = eMBTCPInit(CONFIG_EXAMPLES_MODBUS_PORT);
   if (mberr != MB_ENOERR)
     {
       fprintf(stderr, "modbus_main: "
-              "ERROR: eMBInit failed: %d\n", mberr);
+              "ERROR: eMBTCPInit failed: %d\n", mberr);
       goto errout_with_mutex;
     }
 
@@ -227,6 +226,7 @@ static inline int modbus_initialize(void)
   /* Successfully initialized */
 
   g_modbus.threadstate = RUNNING;
+  printf("%s, modbus running\n", __func__);
   return OK;
 
 errout_with_modbus:
@@ -450,6 +450,7 @@ eMBErrorCode eMBRegInputCB(uint8_t *buffer, uint16_t address, uint16_t nregs)
   eMBErrorCode mberr = MB_ENOERR;
   int          index;
 
+  printf("%s, in\n", __func__);
   if ((address >= CONFIG_EXAMPLES_MODBUS_REG_INPUT_START) &&
       (address + nregs <=
       CONFIG_EXAMPLES_MODBUS_REG_INPUT_START +
@@ -469,6 +470,7 @@ eMBErrorCode eMBRegInputCB(uint8_t *buffer, uint16_t address, uint16_t nregs)
       mberr = MB_ENOREG;
     }
 
+  printf("%s, out, mberr: %d\n", __func__, mberr);
   return mberr;
 }
 
@@ -486,6 +488,7 @@ eMBErrorCode eMBRegHoldingCB(uint8_t *buffer, uint16_t address, uint16_t nregs,
   eMBErrorCode    mberr = MB_ENOERR;
   int             index;
 
+  //printf("%s, in, addr: %d, nregs: %d, mode: %d\n", __func__, address, nregs, mode);
   if ((address >= CONFIG_EXAMPLES_MODBUS_REG_HOLDING_START) &&
       (address + nregs <=
        CONFIG_EXAMPLES_MODBUS_REG_HOLDING_START +
@@ -523,8 +526,10 @@ eMBErrorCode eMBRegHoldingCB(uint8_t *buffer, uint16_t address, uint16_t nregs,
   else
     {
       mberr = MB_ENOREG;
+      printf("%s, illegal register address.\n", __func__);
     }
 
+  //printf("%s, out, mberr: %d\n", __func__, mberr);
   return mberr;
 }
 
