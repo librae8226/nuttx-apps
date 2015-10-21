@@ -311,7 +311,9 @@ static int exec_match_output(char *subtopic, char *act)
 					}
 					break;
 				case OUTPUT_PWM:
-					bsc_dbg("hit pwm\n");
+					bsc_dbg("hit pwm %d\n", res->id);
+					bsc_pwm_enable();
+					bsc_pwm_output(0, 50, atoi(act));
 					break;
 				default:
 					bsc_dbg("hit default\n");
@@ -885,6 +887,7 @@ static int bscapp_deinit(struct bscapp_data *priv)
 static int bscapp_hw_init(struct bscapp_data *priv)
 {
 	adc_init();
+	bsc_pwm_init();
 	return OK;
 }
 
