@@ -72,6 +72,9 @@ struct bscapp_data {
 	Network n;
 	Client c;
 
+	/* mqtt eth */
+	struct mwifi_data mwd;
+
 	/* workers */
 	pthread_t tid_mqttsub_thread;
 	pthread_t tid_mqttpub_thread;

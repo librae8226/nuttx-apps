@@ -19,32 +19,27 @@
 #include <unistd.h>
 
 #include <apps/netutils/MQTTClient.h>
+#include "mqtt_wifi.h"
 #include "bscapp.h"
 
-struct mslip {
-	int fd;
-};
-
-static struct mslip g_mslip;
-
-static int mslip_open(char *dev)
+static int slip_open(char *dev)
 {
 	return open(dev, O_RDWR | O_NOCTTY);
 }
 
-static int mslip_close(int fd)
+static void slip_close(int fd)
 {
 	close(fd);
 }
 
-static int mslip_write(int fd, char *buf, int n)
+static int slip_write(int fd, char *buf, int n)
 {
 	if (!buf)
 		return -EINVAL;
 	return write(fd, buf, n);
 }
 
-static int mslip_write_str(int fd, char *str)
+static int slip_write_str(int fd, char *str)
 {
 	int len;
 	if (!str)
@@ -53,20 +48,22 @@ static int mslip_write_str(int fd, char *str)
 	return write(fd, str, len);
 }
 
-static int mslip_write_char(int fd, char c)
+static int slip_write_char(int fd, char c)
 {
 	return write(fd, &c, 1);
 }
 
-static bool mslip_try_read(int fd, char *buf, uint32_t nb, uint32_t *nb_read)
+static bool slip_try_read(int fd, char *buf, uint32_t nb, uint32_t *nb_read, int timeout_ms)
 {
 	bool            res = true;
 	ssize_t         ret;
 	fd_set          rfds;
 	struct timeval  tv;
 
+	/* FIXME timeout_ms should be less than 1000 */
+
 	tv.tv_sec = 0;
-	tv.tv_usec = 50000;
+	tv.tv_usec = timeout_ms * 1000;
 	FD_ZERO(&rfds);
 	FD_SET(fd, &rfds);
 
@@ -79,7 +76,7 @@ static bool mslip_try_read(int fd, char *buf, uint32_t nb, uint32_t *nb_read)
 			if (errno != EINTR)
 				res = false;
 		} else if (FD_ISSET(fd, &rfds)) {
-			if ((ret = read(fd, buf, nb)) == -1) {
+			if ((ret = read(fd, buf, nb)) <= 0) {
 				res = false;
 			} else {
 				*nb_read = (uint32_t)ret;
@@ -87,6 +84,7 @@ static bool mslip_try_read(int fd, char *buf, uint32_t nb, uint32_t *nb_read)
 			}
 		} else {
 			*nb_read = 0;
+			res = false;
 			break;
 		}
 	} while (res == true);
@@ -130,8 +128,6 @@ int mqtt_wifi_publish(struct bscapp_data *priv, char *topic, char *payload)
 
 int mqtt_wifi_connect(struct bscapp_data *priv)
 {
-	int ret;
-
 	bsc_info("connecting to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
 	bsc_info("connecting mqtt...\n");
 	bsc_info("connected to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
@@ -143,16 +139,30 @@ int mqtt_wifi_disconnect(struct bscapp_data *priv)
 	return OK;
 }
 
-void mqtt_wifi_init(struct bscapp *priv)
+int mqtt_wifi_init(struct bscapp_data *priv)
 {
-	struct mslip *ms = &g_mslip;
-	bzero(ms, sizeof(struct mslip));
+	struct mwifi_data *mw = &priv->mwd;
+	bzero(mw, sizeof(struct mwifi_data));
 
-	ms->fd = mslip_open("/dev/ttyS1");
-	if (ms->fd < 0)
-		bsc_err("fd: %d, failed\n", ms->fd);
+	mw->fd = slip_open("/dev/ttyS1");
+	if (mw->fd < 0)
+		bsc_err("fd: %d, failed\n", mw->fd);
+	return mw->fd;
+}
 
-	mslip_write_str(ms->fd, "this is from mqtt slip\n\r");
+void mqtt_wifi_deinit(struct bscapp_data *priv)
+{
+	struct mwifi_data *mw = &priv->mwd;
+	slip_close(mw->fd);
+}
 
-	mslip_close(ms->fd);
+void mqtt_wifi_test(struct bscapp_data *priv)
+{
+	struct mwifi_data *mw = &priv->mwd;
+	char ch = 0;
+	uint32_t nread = 0;
+	while (1) {
+		if (slip_try_read(mw->fd, &ch, 1, &nread, 10))
+			bsc_info("got: 0x%02x, nread: %d\n", ch, nread);
+	}
 }

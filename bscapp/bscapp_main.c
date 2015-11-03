@@ -19,6 +19,7 @@
 #include <apps/netutils/netlib.h>
 #include <apps/netutils/webclient.h>
 #include <apps/netutils/MQTTClient.h>
+#include "mqtt_wifi.h"
 #include "bscapp.h"
 
 enum relays_e {
@@ -771,6 +772,8 @@ static pthread_addr_t probe_wifi_thread(pthread_addr_t arg)
 
 	bsc_info("running\n");
 	priv->net_wifi_ready = false;
+
+	mqtt_wifi_init(priv);
 
 	while (!network_ready(priv)) {
 		/* TODO probe & init wifi here */
