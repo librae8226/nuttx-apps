@@ -19,98 +19,7 @@
 #include <apps/netutils/netlib.h>
 #include <apps/netutils/webclient.h>
 #include <apps/netutils/MQTTClient.h>
-
-#define BSCAPP_BUILD_RELEASE	0
-#define BSCAPP_BUILD_TEST	1
-#define BSCAPP_BUILD_DEV	2
-
-/*
- * Experiment features for improvement.
- */
-#define MQTT_SELFPING_ENABLE
-#define MQTT_MUTEX_ENABLE
-
-/*
- * Comment out below lines to build release.
- */
-#define BUILD_SPECIAL		BSCAPP_BUILD_DEV
-
-#if BUILD_SPECIAL != BSCAPP_BUILD_RELEASE
-//#define BSCAPP_DEBUG
-#endif
-
-#ifdef BSCAPP_DEBUG
-#define bsc_dbg(format, ...) \
-	syslog(LOG_DEBUG, "D/"EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
-#define bsc_printf(format, ...) \
-	printf(format, ##__VA_ARGS__)
-#else
-#define bsc_dbg(format, ...)
-#define bsc_printf(format, ...)
-#endif
-
-#define bsc_info(format, ...) \
-	syslog(LOG_INFO, "I/"EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
-#define bsc_warn(format, ...) \
-	syslog(LOG_WARNING, "W/"EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
-#define bsc_err(format, ...) \
-	syslog(LOG_ERR, "E/"EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
-
-#if BUILD_SPECIAL == BSCAPP_BUILD_TEST
-#define MQTT_BROKER_IP		"123.57.208.39"
-#define MQTT_BROKER_PORT	1883
-#define URL_INET_ACCESS		"http://123.57.208.39:8080/config.json"
-#else
-#define MQTT_BROKER_IP		"123.57.208.39"
-#define MQTT_BROKER_PORT	1883
-#define URL_INET_ACCESS		"http://123.57.208.39:8080/config.json"
-#endif
-
-#define BSCAPP_UID_LEN		16
-#define MQTT_BUF_MAX_LEN	128
-#define MQTT_CMD_TIMEOUT	1000
-#define MQTT_SELFPING_TIMEOUT	10
-#define MQTT_SELFPING_INTERVAL  20
-#define MQTT_TOPIC_LEN		128
-#define MQTT_TOPIC_HEADER_LEN	64
-#define MQTT_SUBTOPIC_LEN	32
-
-struct bscapp_data {
-	/* mqtt */
-	Network n;
-	Client c;
-
-	/* workers */
-	pthread_t tid_mqttsub_thread;
-	pthread_t tid_mqttpub_thread;
-	pthread_t tid_sample_thread;
-
-	/* sync resources */
-	sem_t sem;
-	pthread_mutex_t mutex_exit;
-	pthread_mutex_t mutex_mqtt;
-
-	/* flags */
-	volatile bool exit;
-	volatile bool exit_mqttsub_thread;
-	volatile bool exit_mqttpub_thread;
-	volatile bool exit_sample_thread;
-	volatile bool rework;
-
-	/* buffers and strings */
-	unsigned char buf[MQTT_BUF_MAX_LEN];
-	unsigned char readbuf[MQTT_BUF_MAX_LEN];
-	char uid[BSCAPP_UID_LEN];
-	char topic_sub_header[MQTT_TOPIC_HEADER_LEN];
-	char topic_pub_header[MQTT_TOPIC_HEADER_LEN];
-
-#ifdef MQTT_SELFPING_ENABLE
-	/* self ping */
-	volatile bool selfping;
-	timer_t timer_sp;
-	sem_t sem_sp;
-#endif
-};
+#include "bscapp.h"
 
 enum relays_e {
 	RELAY_1 = 1,
@@ -326,14 +235,8 @@ static int exec_match_output(char *subtopic, char *act)
 	return ret;
 }
 
-static void msg_handler(MessageData *md)
+static void mqtt_msg_handler(char *topic, int topic_len, char *payload, int payload_len)
 {
-	MQTTMessage *message = md->message;
-	char *topic = md->topicName->lenstring.data;
-	int topic_len = md->topicName->lenstring.len;
-	char *payload = (char *)message->payload;
-	int payload_len = message->payloadlen;
-
 	char subtopic[MQTT_SUBTOPIC_LEN] = {0};
 	char header_len = 0;
 	char *token = NULL;
@@ -391,202 +294,79 @@ static void msg_handler(MessageData *md)
 
 int bsc_mqtt_subscribe(struct bscapp_data *priv, char *topic)
 {
-	int ret = 0;
-	int val;
-
-	/* TODO ensure mqtt connection is alive */
+	int ret = OK;
 
 	bsc_info("subscribing to %s\n", topic);
-	do {
-		ret = MQTTSubscribe(&priv->c, topic, QOS1, msg_handler);
-		if (ret < 0) {
-			bsc_warn("subscribe failed: %d, try again\n", ret);
-			usleep(100000);
-		} else {
-			bsc_info("subscribe ok\n");
-		}
-	} while (ret < 0);
-
-	ret = sem_getvalue(&priv->sem, &val);
-	if (ret < 0)
-		bsc_dbg("could not get semaphore value\n");
-	else
-		bsc_dbg("semaphore value: %d\n", val);
-
-	if (val < 0) {
-		bsc_dbg("posting semaphore\n");
-		ret = sem_post(&priv->sem);
-		if (ret != 0)
-			bsc_err("sem_post failed\n");
-	} else {
-		bsc_dbg("val > 0\n");
+	switch (priv->net_intf) {
+		case NET_INTF_ETH:
+			ret = mqtt_eth_subscribe(priv, topic, mqtt_msg_handler);
+			break;
+		case NET_INTF_WIFI:
+			ret = mqtt_wifi_subscribe(priv, topic, mqtt_msg_handler);
+			break;
+		default:
+			ret = -1;
+			bsc_warn("unsupported net intf: %d\n", priv->net_intf);
+			break;
 	}
-
-	while (!priv->exit_mqttsub_thread) {
-#ifdef MQTT_MUTEX_ENABLE
-		ret = pthread_mutex_lock(&priv->mutex_mqtt);
-		if (ret != 0)
-			bsc_err("failed to lock mutex: %d\n", ret);
-#endif
-
-		ret = MQTTYield(&priv->c, 100);
-		if (ret < 0)
-			bsc_dbg("yield ret: %d\n", ret);
-
-#ifdef MQTT_MUTEX_ENABLE
-		ret = pthread_mutex_unlock(&priv->mutex_mqtt);
-		if (ret != 0)
-			bsc_err("failed to unlock mutex: %d\n", ret);
-#endif
-	}
-
-	return OK;
+	return ret;
 }
 
 int bsc_mqtt_publish(struct bscapp_data *priv, char *topic, char *payload)
 {
-	MQTTMessage msg;
-	char msgbuf[MQTT_BUF_MAX_LEN];
 	int ret = OK;
 
-	if (topic == NULL || payload == NULL)
-		return -EINVAL;
-
-	bsc_dbg("pub topic: %s\n", topic);
-	bsc_dbg("payload  : %s\n", payload);
-
-	bzero(msgbuf, sizeof(msgbuf));
-	if (strlen(payload) > MQTT_BUF_MAX_LEN) {
-		bsc_warn("can't handle payload length>%d (%d)\n", MQTT_BUF_MAX_LEN, strlen(payload));
-		return -EOVERFLOW;
+	switch (priv->net_intf) {
+		case NET_INTF_ETH:
+			ret = mqtt_eth_publish(priv, topic, payload);
+			break;
+		case NET_INTF_WIFI:
+			ret = mqtt_wifi_publish(priv, topic, payload);
+			break;
+		default:
+			ret = -1;
+			bsc_warn("unsupported net intf: %d\n", priv->net_intf);
+			break;
 	}
-	strcpy(msgbuf, payload);
-	msg.qos = QOS0;
-	msg.retained = false;
-	msg.dup = false;
-	msg.payload = (void *)msgbuf;
-	msg.payloadlen = strlen(msgbuf) + 1;
-
-	/* TODO ensure mqtt connection is alive */
-
-#ifdef MQTT_MUTEX_ENABLE
-	ret = pthread_mutex_lock(&priv->mutex_mqtt);
-	if (ret != 0)
-		bsc_err("failed to lock mutex: %d\n", ret);
-#endif
-
-	ret = MQTTPublish(&priv->c, topic, &msg);
-	if (ret != 0) {
-		bsc_err("error publish, ret: %d\n", ret);
-	} else {
-		if (msg.qos > 0) {
-			ret = MQTTYield(&priv->c, 100);
-			if (ret < 0)
-				bsc_dbg("yield ret: %d\n", ret);
-		}
-	}
-
-#ifdef MQTT_MUTEX_ENABLE
-	ret = pthread_mutex_unlock(&priv->mutex_mqtt);
-	if (ret != 0)
-		bsc_err("failed to unlock mutex: %d\n", ret);
-#endif
-
 	return ret;
 }
 
 int bsc_mqtt_connect(struct bscapp_data *priv)
 {
 	int ret;
-
 #ifdef MQTT_SELFPING_ENABLE
 	priv->selfping = false;
 #endif
-
-	bsc_info("connecting to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
-	NewNetwork(&priv->n);
-	while (ConnectNetwork(&priv->n, MQTT_BROKER_IP, MQTT_BROKER_PORT) != OK) {
-		bsc_warn("failed to connect network, try again\n");
-		usleep(100000);
+	switch (priv->net_intf) {
+		case NET_INTF_ETH:
+			ret = mqtt_eth_connect(priv);
+			break;
+		case NET_INTF_WIFI:
+			ret = mqtt_wifi_connect(priv);
+			break;
+		default:
+			ret = -1;
+			bsc_warn("unsupported net intf: %d\n", priv->net_intf);
+			break;
 	}
-	MQTTClient(&priv->c, &priv->n, MQTT_CMD_TIMEOUT,
-			priv->buf, MQTT_BUF_MAX_LEN, priv->readbuf, MQTT_BUF_MAX_LEN);
-
-	MQTTPacket_connectData conn_data = MQTTPacket_connectData_initializer;
-	conn_data.willFlag = 0;
-	conn_data.MQTTVersion = 3;
-	conn_data.clientID.cstring = priv->uid;
-	conn_data.username.cstring = NULL;
-	conn_data.password.cstring = NULL;
-	conn_data.keepAliveInterval = 30;
-	conn_data.cleansession = 1;
-
-	bsc_info("connecting mqtt...\n");
-	do {
-		ret = MQTTConnect(&priv->c, &conn_data);
-		if (ret < 0) {
-			bsc_warn("connect failed: %d, try again\n", ret);
-			usleep(100000);
-		} else {
-			bsc_info("connected to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
-		}
-	} while (ret < 0);
-	return OK;
+	return ret;
 }
 
 int bsc_mqtt_disconnect(struct bscapp_data *priv)
 {
-	MQTTDisconnect(&priv->c);
-	priv->n.disconnect(&priv->n);
-	return OK;
-}
-
-static int wait_for_ip(void)
-{
-	struct in_addr iaddr;
-	int ret = -1;
-	while (1) {
-		ret = netlib_get_ipv4addr("eth0", &iaddr);
-		if (ret < 0) {
-			bsc_err("netlib_get_ipv4addr failed.\n");
-			sleep(1);
-			continue;
-		}
-		bsc_info("... 0x%08x\n", iaddr.s_addr);
-		if (iaddr.s_addr != 0x0 && iaddr.s_addr != 0xdeadbeef)
-			break;
-		sleep(1);
-	}
-	return OK;
-}
-
-static void wget_callback(FAR char **buffer, int offset, int datend,
-                          FAR int *buflen, FAR void *arg)
-{
-	int i;
-	bsc_info("len: %d\n", *buflen);
-	for (i = offset; i <= datend; i++)
-		bsc_printf("%c", (*buffer)[i]);
-	bsc_printf("\n");
-}
-
-static int wait_for_internet(void)
-{
 	int ret;
-	char *buffer_wget = malloc(512);
-
-	/* FIXME should be able to recover */
-	DEBUGASSERT(buffer_wget);
-
-	while (1) {
-		bsc_info("...\n");
-		ret = wget(URL_INET_ACCESS, buffer_wget, 512, wget_callback, NULL);
-		if (ret == 0)
+	switch (priv->net_intf) {
+		case NET_INTF_ETH:
+			ret = mqtt_eth_disconnect(priv);
 			break;
-		sleep(1);
+		case NET_INTF_WIFI:
+			ret = mqtt_wifi_disconnect(priv);
+			break;
+		default:
+			ret = -1;
+			bsc_warn("unsupported net intf: %d\n", priv->net_intf);
+			break;
 	}
-
-	free(buffer_wget);
 	return OK;
 }
 
@@ -629,7 +409,7 @@ static pthread_addr_t mqttsub_thread(pthread_addr_t arg)
 	return NULL;
 }
 
-static int start_mqttsub_thread(struct bscapp_data *priv)
+static int start_mqttsub(struct bscapp_data *priv)
 {
 	struct sched_param sparam;
 	pthread_attr_t attr;
@@ -692,7 +472,7 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 	return NULL;
 }
 
-static int start_mqttpub_thread(struct bscapp_data *priv)
+static int start_mqttpub(struct bscapp_data *priv)
 {
 	struct sched_param sparam;
 	pthread_attr_t attr;
@@ -804,7 +584,7 @@ static pthread_addr_t sample_thread(pthread_addr_t arg)
 	return NULL;
 }
 
-static int start_sample_thread(struct bscapp_data *priv)
+static int start_sample(struct bscapp_data *priv)
 {
 	struct sched_param sparam;
 	pthread_attr_t attr;
@@ -961,6 +741,144 @@ err_out_timer_create:
 	return ERROR;
 }
 
+static bool network_ready(struct bscapp_data *priv)
+{
+	bsc_info("? wait...\n");
+	return priv->net_wifi_ready || priv->net_eth_ready;
+}
+
+static void wget_callback(FAR char **buffer, int offset, int datend,
+                          FAR int *buflen, FAR void *arg)
+{
+	int i;
+	bsc_info("len: %d\n", *buflen);
+	for (i = offset; i <= datend; i++)
+		bsc_printf("%c", (*buffer)[i]);
+	bsc_printf("\n");
+}
+
+static pthread_addr_t probe_eth_thread(pthread_addr_t arg)
+{
+	struct bscapp_data *priv = (struct bscapp_data *)arg;
+	struct in_addr iaddr;
+	int ret = -1;
+	char *buffer_wget;
+
+	bsc_info("running\n");
+
+	priv->net_eth_ready = false;
+	nsh_netinit();
+
+	buffer_wget = malloc(512);
+
+	/* FIXME should be able to recover */
+	DEBUGASSERT(buffer_wget);
+
+	while (!network_ready(priv)) {
+		ret = netlib_get_ipv4addr("eth0", &iaddr);
+		if (ret < 0) {
+			bsc_err("netlib_get_ipv4addr failed.\n");
+			sleep(1);
+			continue;
+		}
+		if (iaddr.s_addr != 0x0 && iaddr.s_addr != 0xdeadbeef) {
+			ret = wget(URL_INET_ACCESS, buffer_wget, 512, wget_callback, NULL);
+			if (ret == 0) {
+				priv->net_eth_ready = true;
+				break;
+			} else {
+				bsc_info("wait for internet\n");
+				sleep(1);
+			}
+		} else {
+			bsc_info("wait for ip 0x%08x\n", iaddr.s_addr);
+			sleep(1);
+		}
+	}
+	free(buffer_wget);
+
+	bsc_info("exiting\n");
+	return NULL;
+}
+
+static pthread_addr_t probe_wifi_thread(pthread_addr_t arg)
+{
+	struct bscapp_data *priv = (struct bscapp_data *)arg;
+
+	bsc_info("running\n");
+	priv->net_wifi_ready = false;
+
+	while (!network_ready(priv)) {
+		/* TODO probe & init wifi here */
+		sleep(1);
+	}
+
+	bsc_info("exiting\n");
+	return NULL;
+}
+
+static int start_probe_eth(struct bscapp_data *priv)
+{
+	struct sched_param sparam;
+	pthread_attr_t attr;
+	int ret;
+
+	pthread_attr_init(&attr);
+	sparam.sched_priority = 50;
+	(void)pthread_attr_setschedparam(&attr, &sparam);
+	(void)pthread_attr_setstacksize(&attr, 2048);
+
+	bsc_info("starting probe eth thread\n");
+	ret = pthread_create(&priv->tid_probe_eth_thread, &attr, probe_eth_thread, priv);
+	if (ret != OK) {
+		bsc_err("failed to create thread: %d\n", ret);
+		return -EFAULT;
+	}
+	pthread_setname_np(priv->tid_probe_eth_thread, "probe_eth_thread");
+	pthread_detach(priv->tid_probe_eth_thread);
+
+	return ret;
+}
+
+static int start_probe_wifi(struct bscapp_data *priv)
+{
+	struct sched_param sparam;
+	pthread_attr_t attr;
+	int ret;
+
+	pthread_attr_init(&attr);
+	sparam.sched_priority = 50;
+	(void)pthread_attr_setschedparam(&attr, &sparam);
+	(void)pthread_attr_setstacksize(&attr, 2048);
+
+	bsc_info("starting probe wifi thread\n");
+	ret = pthread_create(&priv->tid_probe_wifi_thread, &attr, probe_wifi_thread, priv);
+	if (ret != OK) {
+		bsc_err("failed to create thread: %d\n", ret);
+		return -EFAULT;
+	}
+	pthread_setname_np(priv->tid_probe_wifi_thread, "probe_wifi_thread");
+	pthread_detach(priv->tid_probe_wifi_thread);
+
+	return ret;
+}
+
+static void network_probe(struct bscapp_data *priv)
+{
+	start_probe_eth(priv);
+	start_probe_wifi(priv);
+}
+
+static void network_arbitrate(struct bscapp_data *priv)
+{
+	if (priv->net_eth_ready)
+		priv->net_intf = NET_INTF_ETH;
+	else if (priv->net_wifi_ready)
+		priv->net_intf = NET_INTF_WIFI;
+	else
+		DEBUGASSERT(0); /* FIXME: shouldn't happen */
+}
+
 #ifdef CONFIG_BUILD_KERNEL
 int main(int argc, FAR char *argv[])
 #else
@@ -976,14 +894,17 @@ int bscapp_main(int argc, char *argv[])
 	bscapp_hw_init(priv);
 	bscapp_init(priv);
 
-
 	do {
-		nsh_netinit();
-		wait_for_ip();
-//		nsh_telnetstart();
-		wait_for_internet();
+		/* start network probing threads */
+		network_probe(priv);
+
+		while (!network_ready(priv))
+			sleep(1);
+
+		network_arbitrate(priv);
+
 		bsc_mqtt_connect(priv);
-		start_mqttsub_thread(priv);
+		start_mqttsub(priv);
 
 		ret = sem_wait(&priv->sem);
 		if (ret != 0)
@@ -991,8 +912,8 @@ int bscapp_main(int argc, char *argv[])
 #if BUILD_SPECIAL != BSCAPP_BUILD_RELEASE
 		selftest_mqtt(priv);
 #endif
-		start_mqttpub_thread(priv);
-		start_sample_thread(priv);
+		start_mqttpub(priv);
+		start_sample(priv);
 
 		while (!priv->rework) {
 #ifdef MQTT_SELFPING_ENABLE
