@@ -172,8 +172,20 @@ static struct bscapp_data g_priv;
 int adc_init(void);
 uint16_t adc_measure(unsigned int channel);
 void relays_setstat(int relays, bool stat);
+int bsc_pwm_init(void);
+int bsc_pwm_enable(int ch);
+int bsc_pwm_disable(int ch);
+int bsc_pwm_output(int ch, int freq, int duty);
 int nsh_netinit(void);
 int nsh_telnetstart(void);
+int mqtt_eth_subscribe(struct bscapp_data *priv, char *topic, mqtt_msg_handler_t mh);
+int mqtt_wifi_subscribe(struct bscapp_data *priv, char *topic, mqtt_msg_handler_t mh);
+int mqtt_eth_publish(struct bscapp_data *priv, char *topic, char *payload);
+int mqtt_wifi_publish(struct bscapp_data *priv, char *topic, char *payload);
+int mqtt_eth_connect(struct bscapp_data *priv);
+int mqtt_wifi_connect(struct bscapp_data *priv);
+int mqtt_eth_disconnect(struct bscapp_data *priv);
+int mqtt_wifi_disconnect(struct bscapp_data *priv);
 
 static void printstrbylen(char *msg, char *str, int len)
 {
@@ -221,7 +233,7 @@ static int exec_match_output(char *subtopic, char *act)
 					break;
 				case OUTPUT_PWM:
 					bsc_dbg("hit pwm %d\n", res->id);
-					bsc_pwm_enable();
+					bsc_pwm_enable(0);
 					bsc_pwm_output(0, 50, atoi(act));
 					break;
 				default:
@@ -367,7 +379,7 @@ int bsc_mqtt_disconnect(struct bscapp_data *priv)
 			bsc_warn("unsupported net intf: %d\n", priv->net_intf);
 			break;
 	}
-	return OK;
+	return ret;
 }
 
 static int stop_thread(struct bscapp_data *priv, pthread_t tid, volatile bool *p_exit)
@@ -623,54 +635,6 @@ static int selftest_mqtt(struct bscapp_data *priv)
 	return OK;
 }
 
-static int bscapp_init(struct bscapp_data *priv)
-{
-	bsc_dbg("in\n");
-
-	bzero(priv, sizeof(struct bscapp_data));
-	sem_init(&priv->sem, 0, 0);
-	pthread_mutex_init(&priv->mutex_exit, NULL);
-	pthread_mutex_init(&priv->mutex_mqtt, NULL);
-
-#if 0
-	uint32_t uid_0_31 = (*(volatile uint32_t *)(0x1ffff7e8));
-	uint32_t uid_32_63 = (*(volatile uint32_t *)(0x1ffff7e8 + 4));
-#endif
-	uint32_t uid_64_95 = (*(volatile uint32_t *)(0x1ffff7e8 + 8));
-#if BUILD_SPECIAL == BSCAPP_BUILD_TEST
-	sprintf(priv->uid, "864-test");
-#elif BUILD_SPECIAL == BSCAPP_BUILD_DEV
-	sprintf(priv->uid, "864-dev");
-#else
-	sprintf(priv->uid, "864-%08x", uid_64_95);
-#endif
-	bsc_info("uid: %s\n", priv->uid);
-	sprintf(priv->topic_sub_header, "/down/bs/%s", priv->uid);
-	sprintf(priv->topic_pub_header, "/up/bs/%s", priv->uid);
-	bsc_info("sub: %s\n", priv->topic_sub_header);
-	bsc_info("pub: %s\n", priv->topic_pub_header);
-
-	bsc_dbg("out\n");
-	return OK;
-}
-
-static int bscapp_deinit(struct bscapp_data *priv)
-{
-	bsc_dbg("in\n");
-	pthread_mutex_destroy(&priv->mutex_mqtt);
-	pthread_mutex_destroy(&priv->mutex_exit);
-	sem_destroy(&priv->sem);
-	bsc_dbg("out\n");
-	return OK;
-}
-
-static int bscapp_hw_init(struct bscapp_data *priv)
-{
-	adc_init();
-	bsc_pwm_init();
-	return OK;
-}
-
 #ifdef MQTT_SELFPING_ENABLE
 static void selfping_timeout(int signo, siginfo_t *info, void *ucontext)
 {
@@ -877,6 +841,54 @@ static void network_arbitrate(struct bscapp_data *priv)
 		priv->net_intf = NET_INTF_WIFI;
 	else
 		DEBUGASSERT(0); /* FIXME: shouldn't happen */
+}
+
+static int bscapp_init(struct bscapp_data *priv)
+{
+	bsc_dbg("in\n");
+
+	bzero(priv, sizeof(struct bscapp_data));
+	sem_init(&priv->sem, 0, 0);
+	pthread_mutex_init(&priv->mutex_exit, NULL);
+	pthread_mutex_init(&priv->mutex_mqtt, NULL);
+
+#if 0
+	uint32_t uid_0_31 = (*(volatile uint32_t *)(0x1ffff7e8));
+	uint32_t uid_32_63 = (*(volatile uint32_t *)(0x1ffff7e8 + 4));
+#endif
+	uint32_t uid_64_95 = (*(volatile uint32_t *)(0x1ffff7e8 + 8));
+#if BUILD_SPECIAL == BSCAPP_BUILD_TEST
+	sprintf(priv->uid, "864-test");
+#elif BUILD_SPECIAL == BSCAPP_BUILD_DEV
+	sprintf(priv->uid, "864-dev");
+#else
+	sprintf(priv->uid, "864-%08x", uid_64_95);
+#endif
+	bsc_info("uid: %s\n", priv->uid);
+	sprintf(priv->topic_sub_header, "/down/bs/%s", priv->uid);
+	sprintf(priv->topic_pub_header, "/up/bs/%s", priv->uid);
+	bsc_info("sub: %s\n", priv->topic_sub_header);
+	bsc_info("pub: %s\n", priv->topic_pub_header);
+
+	bsc_dbg("out\n");
+	return OK;
+}
+
+static int bscapp_deinit(struct bscapp_data *priv)
+{
+	bsc_dbg("in\n");
+	pthread_mutex_destroy(&priv->mutex_mqtt);
+	pthread_mutex_destroy(&priv->mutex_exit);
+	sem_destroy(&priv->sem);
+	bsc_dbg("out\n");
+	return OK;
+}
+
+static int bscapp_hw_init(struct bscapp_data *priv)
+{
+	adc_init();
+	bsc_pwm_init();
+	return OK;
 }
 
 #ifdef CONFIG_BUILD_KERNEL
