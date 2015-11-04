@@ -708,7 +708,7 @@ err_out_timer_create:
 
 static bool network_ready(struct bscapp_data *priv)
 {
-	bsc_info("? wait...\n");
+	bsc_dbg("? wait...\n");
 	return priv->net_wifi_ready || priv->net_eth_ready;
 }
 
@@ -773,10 +773,12 @@ static pthread_addr_t probe_wifi_thread(pthread_addr_t arg)
 	bsc_info("running\n");
 	priv->net_wifi_ready = false;
 
-	mqtt_wifi_init(priv);
+	mqtt_wifi_init(&priv->mwd);
 
 	while (!network_ready(priv)) {
 		/* TODO probe & init wifi here */
+		if (mqtt_wifi_test(&priv->mwd))
+			break;
 		sleep(1);
 	}
 
@@ -832,7 +834,7 @@ static int start_probe_wifi(struct bscapp_data *priv)
 
 static void network_probe(struct bscapp_data *priv)
 {
-	start_probe_eth(priv);
+//	start_probe_eth(priv);
 	start_probe_wifi(priv);
 }
 

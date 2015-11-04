@@ -17,7 +17,7 @@
 #define BUILD_SPECIAL		BSCAPP_BUILD_DEV
 
 #if BUILD_SPECIAL != BSCAPP_BUILD_RELEASE
-//#define BSCAPP_DEBUG
+#define BSCAPP_DEBUG
 #endif
 
 #ifdef BSCAPP_DEBUG
@@ -59,6 +59,8 @@
 #define NET_INTF_NULL		0
 #define NET_INTF_WIFI		1
 #define NET_INTF_ETH		2
+
+#include "mqtt_wifi.h"
 
 typedef void (*mqtt_msg_handler_t)(char *, int, char *, int);
 

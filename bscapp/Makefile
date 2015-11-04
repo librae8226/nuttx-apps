@@ -43,8 +43,8 @@ PRIORITY = SCHED_PRIORITY_DEFAULT
 STACKSIZE = 2048
 
 ASRCS =
-CSRCS =
-MAINSRC = bscapp_main.c adc_hw.c pwm_hw.c mqtt_eth.c mqtt_wifi.c
+CSRCS = adc_hw.c pwm_hw.c mqtt_eth.c mqtt_wifi.c
+MAINSRC = bscapp_main.c
 CFLAGS += -I$(ARCH_SRCDIR)/chip -I$(ARCH_SRCDIR)/common -I$(ARCH_SRCDIR)/armv7-m
 
 AOBJS = $(ASRCS:.S=$(OBJEXT))
