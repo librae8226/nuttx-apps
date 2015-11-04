@@ -25,6 +25,7 @@
 
 static int g_slip_fd = 0;
 static bool g_wifi_connected = false;
+static bool g_mqtt_connected = false;
 
 static int slip_open(char *dev)
 {
@@ -474,7 +475,7 @@ static int32_t esp_resp_popArgs(struct resp_data *r, uint8_t *data, uint16_t max
 		}
 
 	}
-	r->arg_num ++;
+	r->arg_num++;
 	return len;
 }
 
@@ -489,21 +490,11 @@ static char *esp_resp_popString(struct resp_data *r)
 
 	r->arg_ptr += 2;
 	strncpy((char *)pbuf, (const char *)r->arg_ptr, len);
+	r->arg_ptr += len;
 	r->arg_num++;
 
 	return (char *)r->buf;
 }
-
-#if 0
-void esp_resp_popString(struct resp_data *r, String* data)
-{
-	uint16_t len = *(uint16_t*)r->arg_ptr;
-	r->arg_ptr += 2;
-	while(len --)
-		data->concat( (char)*(r->arg_ptr) ++);
-	arg_num ++;
-}
-#endif
 
 static void esp_wifi_cb(void* response)
 {
@@ -515,12 +506,10 @@ static void esp_wifi_cb(void* response)
 		esp_resp_popArgs(&rd, (uint8_t*)&status, 4);
 		if(status == STATION_GOT_IP) {
 			bsc_info("WIFI CONNECTED\n");
-//			mqtt.connect("yourserver.com", 1883, false);
 			g_wifi_connected = true;
-			//or mqtt.connect("host", 1883); /*without security ssl*/
 		} else {
 			g_wifi_connected = false;
-//			mqtt.disconnect();
+//			esp_mqtt_disconnect(mw); /* FIXME wifi disconnect handling */
 			bsc_info("wifi status: %d\n", status);
 		}
 	}
@@ -538,30 +527,22 @@ static void esp_wifi_connect(struct mwifi_data *mw, const char* ssid, const char
 static void esp_mqtt_connected_cb(void* response)
 {
 	bsc_info("Connected\n");
-/*
-	esp_mqtt_subscribe("/topic/0"); //or mqtt.subscribe("topic"); with qos = 0
-	esp_mqtt_subscribe("/topic/1");
-	esp_mqtt_subscribe("/topic/2");
-	esp_mqtt_publish("/topic/0", "data0");
-*/
+	g_mqtt_connected = true;
 }
 
 static void esp_mqtt_disconnected_cb(void* response)
 {
 	bsc_info("Disconnected\n");
+	g_mqtt_connected = false;
 }
 
 static void esp_mqtt_data_cb(void* response)
 {
-//	RESPONSE res(response);
 	struct resp_data rd;
 	esp_resp_create(&rd, response);
 
 	bsc_info("Received topic: %s\n", esp_resp_popString(&rd));
-	//String topic = res.popString();
-
 	bsc_info("data: %s\n", esp_resp_popString(&rd));
-	//String data = res.popString();
 }
 
 static void esp_mqtt_published_cb(void* response)
@@ -669,7 +650,7 @@ static bool esp_mqtt_setup(struct mwifi_data *mw, const char* client_id, const c
 	return true;
 }
 
-bool mqtt_wifi_test(struct mwifi_data *mw)
+bool mqtt_wifi_unit_test(struct mwifi_data *mw)
 {
 	bsc_info("in\n");
 	esp_init(mw);
@@ -695,14 +676,21 @@ bool mqtt_wifi_test(struct mwifi_data *mw)
 	while (!g_wifi_connected) {
 		esp_process(mw);
 	}
-#if 0
-	char ch = 0;
-	uint32_t nread = 0;
-	while (1) {
-		if (slip_try_read(mw->fd, &ch, 1, &nread, 10))
-			bsc_info("got: 0x%02x, nread: %d\n", ch, nread);
+
+	esp_mqtt_connect(mw, "123.57.208.39", 1883, false);
+
+	while (!g_mqtt_connected) {
+		esp_process(mw);
 	}
-#endif
+
+	esp_mqtt_subscribe(mw, "/topic/0", 0);
+	esp_mqtt_subscribe(mw, "/topic/1", 1);
+	esp_mqtt_publish(mw, "/topic/0", "data0", 0, 0);
+
+	while (1) {
+		esp_process(mw);
+	}
+
 	bsc_info("out\n");
 	return true;
 }
