@@ -23,7 +23,8 @@
 #include "mqtt_wifi.h"
 #include "bscapp.h"
 
-static int g_slip_fd;
+static int g_slip_fd = 0;
+static bool g_wifi_connected = false;
 
 static int slip_open(char *dev)
 {
@@ -504,6 +505,36 @@ void esp_resp_popString(struct resp_data *r, String* data)
 }
 #endif
 
+static void esp_wifi_cb(void* response)
+{
+	uint32_t status;
+	struct resp_data rd;
+	esp_resp_create(&rd, response);
+
+	if(esp_resp_getArgc(&rd) == 1) {
+		esp_resp_popArgs(&rd, (uint8_t*)&status, 4);
+		if(status == STATION_GOT_IP) {
+			bsc_info("WIFI CONNECTED\n");
+//			mqtt.connect("yourserver.com", 1883, false);
+			g_wifi_connected = true;
+			//or mqtt.connect("host", 1883); /*without security ssl*/
+		} else {
+			g_wifi_connected = false;
+//			mqtt.disconnect();
+			bsc_info("wifi status: %d\n", status);
+		}
+	}
+}
+
+static void esp_wifi_connect(struct mwifi_data *mw, const char* ssid, const char* password)
+{
+	uint16_t crc;
+	crc = __esp_request_4(CMD_WIFI_CONNECT, (uint32_t)&esp_wifi_cb, 0, 2);
+	crc = __esp_request_3(crc,(uint8_t*)ssid, strlen(ssid));
+	crc = __esp_request_3(crc,(uint8_t*)password, strlen(password));
+	__esp_request_1(crc);
+}
+
 static void esp_mqtt_connected_cb(void* response)
 {
 	bsc_info("Connected\n");
@@ -640,7 +671,7 @@ static bool esp_mqtt_setup(struct mwifi_data *mw, const char* client_id, const c
 
 bool mqtt_wifi_test(struct mwifi_data *mw)
 {
-	bsc_printf("%s entry\n", __func__);
+	bsc_info("in\n");
 	esp_init(mw);
 	esp_enable(mw);
 	esp_reset(mw);
@@ -658,6 +689,12 @@ bool mqtt_wifi_test(struct mwifi_data *mw)
 		bsc_info("wait for mqtt lwt\n");
 	}
 	bsc_info("mqtt lwp done.\n");
+
+	esp_wifi_connect(mw, "Xiaomi_FD26", "basicbox565");
+
+	while (!g_wifi_connected) {
+		esp_process(mw);
+	}
 #if 0
 	char ch = 0;
 	uint32_t nread = 0;
@@ -666,5 +703,6 @@ bool mqtt_wifi_test(struct mwifi_data *mw)
 			bsc_info("got: 0x%02x, nread: %d\n", ch, nread);
 	}
 #endif
+	bsc_info("out\n");
 	return true;
 }
