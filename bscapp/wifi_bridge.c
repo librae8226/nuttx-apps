@@ -27,7 +27,6 @@ struct wifi_bridge g_wb;
 static int g_slip_fd = 0;
 static bool g_wifi_connected = false;
 static bool g_mqtt_connected = false;
-static bool g_mqtt_publishing = false;
 
 static int slip_open(char *dev)
 {
@@ -103,7 +102,7 @@ static bool slip_try_read(int fd, char *buf, uint32_t nb, uint32_t *nb_read, int
 static bool slip_try_read_char(int fd, char *pch)
 {
 	uint32_t nread;
-	return slip_try_read(fd, pch, 1, &nread, 10);
+	return slip_try_read(fd, pch, 1, &nread, 1);
 }
 
 void *wifi_bridge_init(void)
@@ -459,6 +458,15 @@ static char *esp_resp_popString(struct resp_data *r)
 	return (char *)r->buf;
 }
 
+const char *WIFI_STATUS_STR[] = {
+	"IDLE",
+	"CONNECTING",
+	"WRONG_PASSWORD",
+	"NO_AP_FOUND",
+	"CONNECT_FAIL",
+	"GOT_IP"
+};
+
 static void esp_wifi_cb(void* response)
 {
 	uint32_t status;
@@ -467,14 +475,27 @@ static void esp_wifi_cb(void* response)
 
 	if(esp_resp_getArgc(&rd) == 1) {
 		esp_resp_popArgs(&rd, (uint8_t*)&status, 4);
-		if(status == STATION_GOT_IP) {
-			bsc_info("WIFI CONNECTED\n");
-			g_wifi_connected = true;
-		} else {
-			g_wifi_connected = false;
-//			esp_mqtt_disconnect(wb); /* FIXME wifi disconnect handling */
-			bsc_info("wifi status: %d\n", status);
+		g_wifi_connected = false;
+		switch (status) {
+			case STATION_IDLE:
+				break;
+			case STATION_CONNECTING:
+				break;
+			case STATION_WRONG_PASSWORD:
+				break;
+			case STATION_NO_AP_FOUND:
+				break;
+			case STATION_CONNECT_FAIL:
+				break;
+			case STATION_GOT_IP:
+				g_wifi_connected = true;
+				break;
+			default:
+				bsc_err("unknown status\n");
+				return;
+				break;
 		}
+		bsc_info("wifi status: %d(%s)\n", status, WIFI_STATUS_STR[status]);
 	}
 }
 
@@ -511,7 +532,6 @@ static void esp_mqtt_data_cb(void* response)
 static void esp_mqtt_published_cb(void* response)
 {
 	bsc_info("Published\n");
-	g_mqtt_publishing = false;
 }
 
 static bool esp_mqtt_lwt(struct wifi_bridge *wb, const char* topic, const char* message, uint8_t qos, uint8_t retain)
@@ -580,7 +600,6 @@ static void esp_mqtt_publish(struct wifi_bridge *wb, const char* topic, char* da
 	crc = __esp_request_3(crc,(uint8_t*)&qos, 1);
 	crc = __esp_request_3(crc,(uint8_t*)&retain, 1);
 	__esp_request_1(crc);
-	g_mqtt_publishing = true;
 }
 
 /* mqtt.begin() */
@@ -660,17 +679,17 @@ int wifi_bridge_unit_test(void **h_wb)
 	}
 
 	esp_mqtt_subscribe(wb, "/down/stress", 1);
-	esp_mqtt_publish(wb, "/up/stress", "data0", 0, 0);
+	esp_mqtt_publish(wb, "/down/stress", "data0", 0, 0);
 
 	uint32_t ms = 0;
 	char buf[32] = "";
 	while (1) {
 		esp_process(&wb->ed);
-		if (millis() - ms > 2000 && !g_mqtt_publishing) {
+		if (millis() - ms > 2000) {
 			bzero(buf, sizeof(buf));
 			sprintf(buf, "%d", millis());
 			bsc_info("time: %d, buf: %s\n", millis(), buf);
-			esp_mqtt_publish(wb, "/up/stress", buf, 0, 0);
+			esp_mqtt_publish(wb, "/down/stress", buf, 0, 0);
 			ms = millis();
 		}
 	}
