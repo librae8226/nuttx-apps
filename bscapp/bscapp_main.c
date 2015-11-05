@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <debug.h>
+#include <errno.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stddef.h>
@@ -19,6 +20,8 @@
 #include <apps/netutils/netlib.h>
 #include <apps/netutils/webclient.h>
 #include <apps/netutils/MQTTClient.h>
+#include "app_utils.h"
+#include "mqtt_eth.h"
 #include "mqtt_wifi.h"
 #include "bscapp.h"
 
@@ -170,6 +173,7 @@ static int adc_ch_ai[ADC_CH_MAX] = {
 static struct bscapp_data g_priv;
 
 /* external functions */
+#if 0
 int adc_init(void);
 uint16_t adc_measure(unsigned int channel);
 void relays_setstat(int relays, bool stat);
@@ -187,6 +191,25 @@ int mqtt_eth_connect(struct bscapp_data *priv);
 int mqtt_wifi_connect(struct bscapp_data *priv);
 int mqtt_eth_disconnect(struct bscapp_data *priv);
 int mqtt_wifi_disconnect(struct bscapp_data *priv);
+#else
+#define adc_init() (0)
+#define adc_measure(channel) (0)
+#define relays_setstat(relays, stat) (0)
+#define bsc_pwm_init() (0)
+#define bsc_pwm_enable(ch) (0)
+#define bsc_pwm_disable(ch) (0)
+#define bsc_pwm_output(ch, freq, duty) (0)
+#define nsh_netinit() (0)
+#define nsh_telnetstart() (0)
+#define mqtt_eth_subscribe(priv, topic, mh) (0)
+#define mqtt_wifi_subscribe(priv, topic, mh) (0)
+#define mqtt_eth_publish(priv, topic, payload) (0)
+#define mqtt_wifi_publish(priv, topic, payload) (0)
+#define mqtt_eth_connect(priv) (0)
+#define mqtt_wifi_connect(priv) (0)
+#define mqtt_eth_disconnect(priv) (0)
+#define mqtt_wifi_disconnect(priv) (0)
+#endif
 
 static void printstrbylen(char *msg, char *str, int len)
 {
@@ -708,7 +731,7 @@ err_out_timer_create:
 
 static bool network_ready(struct bscapp_data *priv)
 {
-	bsc_dbg("? wait...\n");
+//	bsc_dbg("? wait...\n");
 	return priv->net_wifi_ready || priv->net_eth_ready;
 }
 
@@ -773,12 +796,10 @@ static pthread_addr_t probe_wifi_thread(pthread_addr_t arg)
 	bsc_info("running\n");
 	priv->net_wifi_ready = false;
 
-	mqtt_wifi_init(&priv->mwd);
+	mqtt_wifi_unit_test(&priv->h_mw);
 
 	while (!network_ready(priv)) {
 		/* TODO probe & init wifi here */
-		if (mqtt_wifi_test(&priv->mwd))
-			break;
 		sleep(1);
 	}
 

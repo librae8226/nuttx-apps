@@ -43,7 +43,7 @@ PRIORITY = SCHED_PRIORITY_DEFAULT
 STACKSIZE = 2048
 
 ASRCS =
-CSRCS = adc_hw.c pwm_hw.c mqtt_eth.c mqtt_wifi.c
+CSRCS = mqtt_wifi.c wifi_bridge.c
 MAINSRC = bscapp_main.c
 CFLAGS += -I$(ARCH_SRCDIR)/chip -I$(ARCH_SRCDIR)/common -I$(ARCH_SRCDIR)/armv7-m
 

@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <debug.h>
+#include <errno.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stddef.h>
@@ -19,6 +20,8 @@
 #include <apps/netutils/netlib.h>
 #include <apps/netutils/webclient.h>
 #include <apps/netutils/MQTTClient.h>
+#include "app_utils.h"
+#include "mqtt_eth.h"
 #include "bscapp.h"
 
 static mqtt_msg_handler_t g_eth_mh = NULL;
