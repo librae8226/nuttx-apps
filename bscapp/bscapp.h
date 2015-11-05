@@ -8,11 +8,10 @@ struct bscapp_data {
 	bool net_wifi_ready;
 
 	/* mqtt eth */
-#if 0
 	Network n;
 	Client c;
 	void *h_me;
-#endif
+
 
 	/* mqtt wifi */
 	void *h_mw;

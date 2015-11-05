@@ -26,18 +26,19 @@
 
 struct mqtt_wifi g_mw;
 
-#if 0
-int mqtt_wifi_subscribe(struct bscapp_data *priv, char *topic, mqtt_msg_handler_t mh)
+int mqtt_wifi_subscribe(struct mqtt_wifi *mw, char *topic, mqtt_msg_handler_t mh)
 {
 	bsc_info("subscribing to %s\n", topic);
-	while (!priv->exit_mqttsub_thread) {
+#if 0
+	while (!mw->exit_mqttsub_thread) {
 		/* do process */
 		usleep(100000);
 	}
+#endif
 	return OK;
 }
 
-int mqtt_wifi_publish(struct bscapp_data *priv, char *topic, char *payload)
+int mqtt_wifi_publish(struct mqtt_wifi *mw, char *topic, char *payload)
 {
 	char msgbuf[MQTT_BUF_MAX_LEN];
 	int ret = OK;
@@ -61,7 +62,7 @@ int mqtt_wifi_publish(struct bscapp_data *priv, char *topic, char *payload)
 	return ret;
 }
 
-int mqtt_wifi_connect(struct bscapp_data *priv)
+int mqtt_wifi_connect(struct mqtt_wifi *mw)
 {
 	bsc_info("connecting to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
 	bsc_info("connecting mqtt...\n");
@@ -69,11 +70,10 @@ int mqtt_wifi_connect(struct bscapp_data *priv)
 	return OK;
 }
 
-int mqtt_wifi_disconnect(struct bscapp_data *priv)
+int mqtt_wifi_disconnect(struct mqtt_wifi *mw)
 {
 	return OK;
 }
-#endif
 
 void *mqtt_wifi_init(void)
 {
@@ -94,7 +94,7 @@ int mqtt_wifi_unit_test(void **h_mw)
 
 	mw = (struct mqtt_wifi *)mqtt_wifi_init();
 	if (!mw) {
-		bsc_err("failed");
+		bsc_err("failed\n");
 		return -EFAULT;
 	}
 

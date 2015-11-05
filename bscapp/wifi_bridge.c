@@ -27,6 +27,7 @@ struct wifi_bridge g_wb;
 static int g_slip_fd = 0;
 static bool g_wifi_connected = false;
 static bool g_mqtt_connected = false;
+static bool g_mqtt_publishing = false;
 
 static int slip_open(char *dev)
 {
@@ -112,7 +113,7 @@ void *wifi_bridge_init(void)
 	/* TODO malloc? */
 
 	if (!wb) {
-		bsc_err("failed");
+		bsc_err("failed\n");
 		return NULL;
 	}
 
@@ -510,6 +511,7 @@ static void esp_mqtt_data_cb(void* response)
 static void esp_mqtt_published_cb(void* response)
 {
 	bsc_info("Published\n");
+	g_mqtt_publishing = false;
 }
 
 static bool esp_mqtt_lwt(struct wifi_bridge *wb, const char* topic, const char* message, uint8_t qos, uint8_t retain)
@@ -567,7 +569,9 @@ static void esp_mqtt_publish(struct wifi_bridge *wb, const char* topic, char* da
 {
 	struct mqtt_data *m = &wb->md;
 	uint16_t crc;
-	uint16_t len = strlen(data);
+	uint16_t len;
+
+	len = strlen(data);
 	crc = __esp_request_4(CMD_MQTT_PUBLISH, 0, 0, 6);
 	crc = __esp_request_3(crc,(uint8_t*)&m->remote_instance, 4);
 	crc = __esp_request_3(crc,(uint8_t*)topic, strlen(topic));
@@ -576,6 +580,7 @@ static void esp_mqtt_publish(struct wifi_bridge *wb, const char* topic, char* da
 	crc = __esp_request_3(crc,(uint8_t*)&qos, 1);
 	crc = __esp_request_3(crc,(uint8_t*)&retain, 1);
 	__esp_request_1(crc);
+	g_mqtt_publishing = true;
 }
 
 /* mqtt.begin() */
@@ -654,11 +659,20 @@ int wifi_bridge_unit_test(void **h_wb)
 		esp_process(&wb->ed);
 	}
 
-	esp_mqtt_subscribe(wb, "#", 1);
-	esp_mqtt_publish(wb, "/topic/0", "data0", 0, 0);
+	esp_mqtt_subscribe(wb, "/down/stress", 1);
+	esp_mqtt_publish(wb, "/up/stress", "data0", 0, 0);
 
+	uint32_t ms = 0;
+	char buf[32] = "";
 	while (1) {
 		esp_process(&wb->ed);
+		if (millis() - ms > 2000 && !g_mqtt_publishing) {
+			bzero(buf, sizeof(buf));
+			sprintf(buf, "%d", millis());
+			bsc_info("time: %d, buf: %s\n", millis(), buf);
+			esp_mqtt_publish(wb, "/up/stress", buf, 0, 0);
+			ms = millis();
+		}
 	}
 
 	wifi_bridge_deinit(wb);

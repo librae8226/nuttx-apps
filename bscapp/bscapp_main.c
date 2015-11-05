@@ -173,7 +173,6 @@ static int adc_ch_ai[ADC_CH_MAX] = {
 static struct bscapp_data g_priv;
 
 /* external functions */
-#if 0
 int adc_init(void);
 uint16_t adc_measure(unsigned int channel);
 void relays_setstat(int relays, bool stat);
@@ -184,32 +183,13 @@ int bsc_pwm_output(int ch, int freq, int duty);
 int nsh_netinit(void);
 int nsh_telnetstart(void);
 int mqtt_eth_subscribe(struct bscapp_data *priv, char *topic, mqtt_msg_handler_t mh);
-int mqtt_wifi_subscribe(struct bscapp_data *priv, char *topic, mqtt_msg_handler_t mh);
 int mqtt_eth_publish(struct bscapp_data *priv, char *topic, char *payload);
-int mqtt_wifi_publish(struct bscapp_data *priv, char *topic, char *payload);
 int mqtt_eth_connect(struct bscapp_data *priv);
-int mqtt_wifi_connect(struct bscapp_data *priv);
 int mqtt_eth_disconnect(struct bscapp_data *priv);
-int mqtt_wifi_disconnect(struct bscapp_data *priv);
-#else
-#define adc_init() (0)
-#define adc_measure(channel) (0)
-#define relays_setstat(relays, stat) (0)
-#define bsc_pwm_init() (0)
-#define bsc_pwm_enable(ch) (0)
-#define bsc_pwm_disable(ch) (0)
-#define bsc_pwm_output(ch, freq, duty) (0)
-#define nsh_netinit() (0)
-#define nsh_telnetstart() (0)
-#define mqtt_eth_subscribe(priv, topic, mh) (0)
-#define mqtt_wifi_subscribe(priv, topic, mh) (0)
-#define mqtt_eth_publish(priv, topic, payload) (0)
-#define mqtt_wifi_publish(priv, topic, payload) (0)
-#define mqtt_eth_connect(priv) (0)
-#define mqtt_wifi_connect(priv) (0)
-#define mqtt_eth_disconnect(priv) (0)
-#define mqtt_wifi_disconnect(priv) (0)
-#endif
+int mqtt_wifi_subscribe(struct mqtt_wifi *mw, char *topic, mqtt_msg_handler_t mh);
+int mqtt_wifi_publish(struct mqtt_wifi *mw, char *topic, char *payload);
+int mqtt_wifi_connect(struct mqtt_wifi *mw);
+int mqtt_wifi_disconnect(struct mqtt_wifi *mw);
 
 static void printstrbylen(char *msg, char *str, int len)
 {
@@ -220,12 +200,6 @@ static void printstrbylen(char *msg, char *str, int len)
 	for (i = 0; i < len; i++)
 		bsc_printf("%c", str[i]);
 	bsc_printf("\n");
-#if 0
-	printf("\t");
-	for (i = 0; i < len; i++)
-		printf("%02x ", str[i]);
-	printf("\n");
-#endif
 }
 
 static int exec_match_output(char *subtopic, char *act)
@@ -338,7 +312,7 @@ int bsc_mqtt_subscribe(struct bscapp_data *priv, char *topic)
 			ret = mqtt_eth_subscribe(priv, topic, mqtt_msg_handler);
 			break;
 		case NET_INTF_WIFI:
-			ret = mqtt_wifi_subscribe(priv, topic, mqtt_msg_handler);
+			ret = mqtt_wifi_subscribe(priv->h_mw, topic, mqtt_msg_handler);
 			break;
 		default:
 			ret = -1;
@@ -357,7 +331,7 @@ int bsc_mqtt_publish(struct bscapp_data *priv, char *topic, char *payload)
 			ret = mqtt_eth_publish(priv, topic, payload);
 			break;
 		case NET_INTF_WIFI:
-			ret = mqtt_wifi_publish(priv, topic, payload);
+			ret = mqtt_wifi_publish(priv->h_mw, topic, payload);
 			break;
 		default:
 			ret = -1;
@@ -378,7 +352,7 @@ int bsc_mqtt_connect(struct bscapp_data *priv)
 			ret = mqtt_eth_connect(priv);
 			break;
 		case NET_INTF_WIFI:
-			ret = mqtt_wifi_connect(priv);
+			ret = mqtt_wifi_connect(priv->h_mw);
 			break;
 		default:
 			ret = -1;
@@ -396,7 +370,7 @@ int bsc_mqtt_disconnect(struct bscapp_data *priv)
 			ret = mqtt_eth_disconnect(priv);
 			break;
 		case NET_INTF_WIFI:
-			ret = mqtt_wifi_disconnect(priv);
+			ret = mqtt_wifi_disconnect(priv->h_mw);
 			break;
 		default:
 			ret = -1;
