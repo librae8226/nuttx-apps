@@ -55,11 +55,21 @@
 #define MQTT_TOPIC_LEN		128
 #define MQTT_TOPIC_HEADER_LEN	64
 #define MQTT_SUBTOPIC_LEN	32
+#define MQTT_USERNAME_LEN	32
+#define MQTT_PASSWORD_LEN	32
 
 #define NET_INTF_NULL		0
 #define NET_INTF_WIFI		1
 #define NET_INTF_ETH		2
 
 typedef void (*mqtt_msg_handler_t)(char *, int, char *, int);
+
+struct mqtt_param {
+	uint8_t wbuf[MQTT_BUF_MAX_LEN];
+	uint8_t rbuf[MQTT_BUF_MAX_LEN];
+	uint8_t uid[BSCAPP_UID_LEN];
+	uint8_t username[MQTT_USERNAME_LEN];
+	uint8_t password[MQTT_PASSWORD_LEN];
+};
 
 #endif /* __APP_UTILS_H__ */

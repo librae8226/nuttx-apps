@@ -55,6 +55,8 @@ void MQTTClient(Client* c, Network* network, unsigned int command_timeout_ms, un
     int i;
     c->ipstack = network;
 
+    DEBUGASSERT(buf&&readbuf);
+
     for (i = 0; i < MAX_MESSAGE_HANDLERS; ++i)
         c->messageHandlers[i].topicFilter = 0;
     c->command_timeout_ms = command_timeout_ms;

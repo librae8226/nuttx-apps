@@ -8,10 +8,7 @@ struct bscapp_data {
 	bool net_wifi_ready;
 
 	/* mqtt eth */
-	Network n;
-	Client c;
 	void *h_me;
-
 
 	/* mqtt wifi */
 	void *h_mw;
@@ -26,7 +23,6 @@ struct bscapp_data {
 	/* sync resources */
 	sem_t sem;
 	pthread_mutex_t mutex_exit;
-	pthread_mutex_t mutex_mqtt;
 
 	/* flags */
 	volatile bool exit;
@@ -35,10 +31,10 @@ struct bscapp_data {
 	volatile bool exit_sample_thread;
 	volatile bool rework;
 
+	/* mqtt specific */
+	struct mqtt_param mparam;
+
 	/* buffers and strings */
-	unsigned char buf[MQTT_BUF_MAX_LEN];
-	unsigned char readbuf[MQTT_BUF_MAX_LEN];
-	char uid[BSCAPP_UID_LEN];
 	char topic_sub_header[MQTT_TOPIC_HEADER_LEN];
 	char topic_pub_header[MQTT_TOPIC_HEADER_LEN];
 

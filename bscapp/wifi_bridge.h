@@ -62,7 +62,7 @@ struct resp_data {
 	uint16_t arg_num;
 	uint8_t *arg_ptr;
 	PACKET_CMD *cmd;
-	uint8_t buf[128]; /* FIXME MQTT_BUF_MAX_LEN duplicated! */
+	uint8_t buf[MQTT_BUF_MAX_LEN]; /* FIXME duplicated! */
 };
 
 struct esp_data {
