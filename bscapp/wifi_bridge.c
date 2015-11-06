@@ -105,35 +105,6 @@ static bool slip_try_read_char(int fd, char *pch)
 	return slip_try_read(fd, pch, 1, &nread, 1);
 }
 
-void *wifi_bridge_init(void)
-{
-	struct wifi_bridge *wb = &g_wb;
-
-	/* TODO malloc? */
-
-	if (!wb) {
-		bsc_err("failed\n");
-		return NULL;
-	}
-
-	bzero(wb, sizeof(struct wifi_bridge));
-
-	wb->fd = slip_open("/dev/ttyS1");
-	if (wb->fd < 0) {
-		bsc_err("fd: %d, failed\n", wb->fd);
-		return NULL;
-	}
-
-	g_slip_fd = wb->fd;
-
-	return (void *)wb;
-}
-
-void wifi_bridge_deinit(struct wifi_bridge *wb)
-{
-	slip_close(wb->fd);
-}
-
 static uint32_t millis(void)
 {
 	uint32_t ticktime, sec, remainder;
@@ -636,6 +607,38 @@ static bool esp_mqtt_setup(struct wifi_bridge *wb, const char* client_id, const 
 	return true;
 }
 
+void *wifi_bridge_init(void)
+{
+	struct wifi_bridge *wb = &g_wb;
+
+	/* TODO malloc? */
+
+	if (!wb) {
+		bsc_err("failed\n");
+		return NULL;
+	}
+
+	bzero(wb, sizeof(struct wifi_bridge));
+
+	wb->fd = slip_open("/dev/ttyS1");
+	if (wb->fd < 0) {
+		bsc_err("fd: %d, failed\n", wb->fd);
+		return NULL;
+	}
+
+	g_slip_fd = wb->fd;
+
+	esp_init(&wb->ed);
+	esp_enable(&wb->ed);
+
+	return (void *)wb;
+}
+
+void wifi_bridge_deinit(struct wifi_bridge *wb)
+{
+	slip_close(wb->fd);
+}
+
 int wifi_bridge_unit_test(void **h_wb)
 {
 	struct wifi_bridge *wb = NULL;
@@ -648,23 +651,11 @@ int wifi_bridge_unit_test(void **h_wb)
 	}
 	*h_wb = (void *)wb;
 
-	esp_init(&wb->ed);
-	esp_enable(&wb->ed);
 	esp_reset(&wb->ed);
 	while (!esp_ready(&wb->ed)) {
 		bsc_info("wait for esp\n");
 	}
 	bsc_info("esp ready.\n");
-
-	while (!esp_mqtt_setup(wb, "DVES_duino", "admin", "Isb_C4OGD4c3", 120, 1)) {
-		bsc_info("wait for mqtt setup\n");
-	}
-	bsc_info("mqtt setup settled.\n");
-
-	while (!esp_mqtt_lwt(wb, "/lwt", "offline", 0, 0)) {
-		bsc_info("wait for mqtt lwt\n");
-	}
-	bsc_info("mqtt lwp done.\n");
 
 	esp_wifi_connect(wb, "Xiaomi_FD26", "basicbox565");
 
@@ -672,6 +663,16 @@ int wifi_bridge_unit_test(void **h_wb)
 		esp_process(&wb->ed);
 	}
 
+	while (!esp_mqtt_setup(wb, "DVES_duino", "admin", "Isb_C4OGD4c3", 120, 1)) {
+		bsc_info("wait for mqtt setup\n");
+	}
+	bsc_info("mqtt setup settled.\n");
+#if 0
+	while (!esp_mqtt_lwt(wb, "/lwt", "offline", 0, 0)) {
+		bsc_info("wait for mqtt lwt\n");
+	}
+	bsc_info("mqtt lwp done.\n");
+#endif
 	esp_mqtt_connect(wb, "123.57.208.39", 1883, false);
 
 	while (!g_mqtt_connected) {

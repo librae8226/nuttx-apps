@@ -817,9 +817,15 @@ static pthread_addr_t probe_wifi_thread(pthread_addr_t arg)
 
 	bsc_info("running\n");
 	priv->net_wifi_ready = false;
+#if 1
+	mqtt_wifi_unit_test(&priv->mparam);
+#else
 	priv->h_mw = mqtt_wifi_init(&priv->mparam);
-#if 0
-	mqtt_wifi_unit_test(&priv->h_mw);
+	if (!priv->h_mw) {
+		bsc_err("init failed\n");
+		sleep(1);
+		return NULL;
+	}
 #endif
 	while (!network_ready(priv)) {
 		/* TODO probe & init wifi here */
@@ -878,8 +884,8 @@ static int start_probe_wifi(struct bscapp_data *priv)
 
 static void network_probe(struct bscapp_data *priv)
 {
-	start_probe_eth(priv);
-//	start_probe_wifi(priv);
+//	start_probe_eth(priv);
+	start_probe_wifi(priv);
 }
 
 static void network_arbitrate(struct bscapp_data *priv)

@@ -100,6 +100,9 @@ void *mqtt_wifi_init(struct mqtt_param *param)
 
 	bzero(&g_mw, sizeof(struct mqtt_wifi));
 
+	mw->wb = (struct wifi_bridge *)wifi_bridge_init();
+	if (!mw->wb)
+		return NULL;
 	mw->mp = param;
 
 	return (void *)&g_mw;
@@ -113,23 +116,21 @@ void mqtt_wifi_deinit(void **h_mw)
 	*h_mw = NULL;
 }
 
-int mqtt_wifi_unit_test(void **h_mw)
+int mqtt_wifi_unit_test(struct mqtt_param *param)
 {
 	struct mqtt_wifi *mw = NULL;
 	int ret;
 	bsc_info("in\n");
 
-	mw = (struct mqtt_wifi *)mqtt_wifi_init(mw->mp);
+	mw = (struct mqtt_wifi *)mqtt_wifi_init(param);
 	if (!mw) {
 		bsc_err("failed\n");
 		return -EFAULT;
 	}
 
-	*h_mw = (void *)mw;
-
 	ret = wifi_bridge_unit_test(&mw->h_wb);
 
-	mqtt_wifi_deinit(h_mw);
+	mqtt_wifi_deinit(&mw);
 
 	bsc_info("out\n");
 	return ret;
