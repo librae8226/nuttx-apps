@@ -927,6 +927,11 @@ static int bscapp_init(struct bscapp_data *priv)
 	bsc_info("sub: %s\n", priv->topic_sub_header);
 	bsc_info("pub: %s\n", priv->topic_pub_header);
 
+	strcpy(priv->mparam.ssid, "Xiaomi_FD26");
+	strcpy(priv->mparam.psk, "basicbox565");
+	strcpy(priv->mparam.username, "admin");
+	strcpy(priv->mparam.password, "Isb_C4OGD4c3");
+
 	bsc_dbg("out\n");
 	return OK;
 }

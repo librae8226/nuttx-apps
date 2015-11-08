@@ -84,6 +84,10 @@ struct wifi_bridge {
 	struct resp_data rd;
 	struct esp_data ed;
 	struct mqtt_data md;
+	mqtt_msg_handler_t msg_handler;
+	bool wifi_connected;
+	bool mqtt_connected;
+	bool mqtt_published;
 };
 
 #endif /* __WIFI_BRIDGE_H__ */

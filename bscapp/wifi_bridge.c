@@ -25,8 +25,6 @@
 
 struct wifi_bridge g_wb;
 static int g_slip_fd = 0;
-static bool g_wifi_connected = false;
-static bool g_mqtt_connected = false;
 
 static int slip_open(char *dev)
 {
@@ -103,15 +101,6 @@ static bool slip_try_read_char(int fd, char *pch)
 {
 	uint32_t nread;
 	return slip_try_read(fd, pch, 1, &nread, 1);
-}
-
-static uint32_t millis(void)
-{
-	uint32_t ticktime, sec, remainder;
-	ticktime = clock_systimer();
-	sec = ticktime / CLOCKS_PER_SEC;
-	remainder = (uint32_t)(ticktime % CLOCKS_PER_SEC);
-	return sec*1000+remainder;
 }
 
 static uint16_t crc16_add(uint8_t b, uint16_t acc)
@@ -283,7 +272,7 @@ static void esp_protoCompletedCb(struct esp_data *e)
 #endif
 }
 
-static void esp_process(struct esp_data *e)
+void esp_process(struct esp_data *e)
 {
 	char value;
 	while (__esp_slip_try_read(&value)) {
@@ -327,14 +316,14 @@ static void esp_enable(struct esp_data *e)
 	usleep(500000);
 }
 
-static void esp_reset(struct esp_data *e)
+void esp_reset(struct esp_data *e)
 {
 	uint16_t crc = __esp_request_4(CMD_RESET, 0, 0, 0);
 	__esp_request_1(crc);
 	usleep(500000);
 }
 
-static bool esp_ready(struct esp_data *e)
+bool esp_ready(struct esp_data *e)
 {
 	uint32_t wait;
 	uint16_t crc;
@@ -446,7 +435,6 @@ static void esp_wifi_cb(void* response)
 
 	if(esp_resp_getArgc(&rd) == 1) {
 		esp_resp_popArgs(&rd, (uint8_t*)&status, 4);
-		g_wifi_connected = false;
 		switch (status) {
 			case STATION_IDLE:
 				break;
@@ -459,7 +447,7 @@ static void esp_wifi_cb(void* response)
 			case STATION_CONNECT_FAIL:
 				break;
 			case STATION_GOT_IP:
-				g_wifi_connected = true;
+				g_wb.wifi_connected = true;
 				break;
 			default:
 				bsc_err("unknown status\n");
@@ -470,7 +458,7 @@ static void esp_wifi_cb(void* response)
 	}
 }
 
-static void esp_wifi_connect(struct wifi_bridge *wb, const char* ssid, const char* password)
+void esp_wifi_connect(struct wifi_bridge *wb, const char* ssid, const char* password)
 {
 	uint16_t crc;
 	crc = __esp_request_4(CMD_WIFI_CONNECT, (uint32_t)&esp_wifi_cb, 0, 2);
@@ -482,30 +470,40 @@ static void esp_wifi_connect(struct wifi_bridge *wb, const char* ssid, const cha
 static void esp_mqtt_connected_cb(void* response)
 {
 	bsc_info("Connected\n");
-	g_mqtt_connected = true;
+	g_wb.wifi_connected = true;
 }
 
 static void esp_mqtt_disconnected_cb(void* response)
 {
 	bsc_info("Disconnected\n");
-	g_mqtt_connected = false;
+	g_wb.mqtt_connected = false;
 }
 
 static void esp_mqtt_data_cb(void* response)
 {
 	struct resp_data rd;
 	esp_resp_create(&rd, response);
+	char *topic = NULL;
+	char *payload = NULL;
+	int topic_len = 0;
+	int payload_len = 0;
 
-	bsc_info("Received topic: %s\n", esp_resp_popString(&rd));
-	bsc_info("data: %s\n", esp_resp_popString(&rd));
+	topic = esp_resp_popString(&rd);
+	payload = esp_resp_popString(&rd);
+	bsc_info("Received topic: %s\n", topic);
+	bsc_info("Received data : %s\n", payload);
+
+	if (g_wb.msg_handler)
+		g_wb.msg_handler(topic, topic_len, payload, payload_len);
 }
 
 static void esp_mqtt_published_cb(void* response)
 {
 	bsc_info("Published\n");
+	g_wb.mqtt_published = true;
 }
 
-static bool esp_mqtt_lwt(struct wifi_bridge *wb, const char* topic, const char* message, uint8_t qos, uint8_t retain)
+bool esp_mqtt_lwt(struct wifi_bridge *wb, const char* topic, const char* message, uint8_t qos, uint8_t retain)
 {
 	struct esp_data *e = &wb->ed;
 	struct mqtt_data *m = &wb->md;
@@ -518,12 +516,12 @@ static bool esp_mqtt_lwt(struct wifi_bridge *wb, const char* topic, const char* 
 	crc = __esp_request_3(crc,(uint8_t*)&qos, 1);
 	crc = __esp_request_3(crc,(uint8_t*)&retain, 1);
 	__esp_request_1(crc);
-	if(esp_waitReturn(e, ESP_TIMEOUT) && e->return_value)
+	if (esp_waitReturn(e, ESP_TIMEOUT) && e->return_value)
 		return true;
 	return false;
 }
 
-static void esp_mqtt_connect(struct wifi_bridge *wb, const char* host, uint32_t port, bool security)
+void esp_mqtt_connect(struct wifi_bridge *wb, const char* host, uint32_t port, bool security)
 {
 	struct mqtt_data *m = &wb->md;
 	uint16_t crc;
@@ -535,7 +533,7 @@ static void esp_mqtt_connect(struct wifi_bridge *wb, const char* host, uint32_t 
 	__esp_request_1(crc);
 }
 
-static void esp_mqtt_disconnect(struct wifi_bridge *wb)
+void esp_mqtt_disconnect(struct wifi_bridge *wb)
 {
 	struct mqtt_data *m = &wb->md;
 	uint16_t crc;
@@ -544,7 +542,7 @@ static void esp_mqtt_disconnect(struct wifi_bridge *wb)
 	__esp_request_1(crc);
 }
 
-static void esp_mqtt_subscribe(struct wifi_bridge *wb, const char* topic, uint8_t qos)
+void esp_mqtt_subscribe(struct wifi_bridge *wb, const char* topic, uint8_t qos)
 {
 	struct mqtt_data *m = &wb->md;
 	uint16_t crc;
@@ -556,7 +554,7 @@ static void esp_mqtt_subscribe(struct wifi_bridge *wb, const char* topic, uint8_
 
 }
 
-static void esp_mqtt_publish(struct wifi_bridge *wb, const char* topic, char* data, uint8_t qos, uint8_t retain)
+void esp_mqtt_publish(struct wifi_bridge *wb, const char* topic, char* data, uint8_t qos, uint8_t retain)
 {
 	struct mqtt_data *m = &wb->md;
 	uint16_t crc;
@@ -571,10 +569,11 @@ static void esp_mqtt_publish(struct wifi_bridge *wb, const char* topic, char* da
 	crc = __esp_request_3(crc,(uint8_t*)&qos, 1);
 	crc = __esp_request_3(crc,(uint8_t*)&retain, 1);
 	__esp_request_1(crc);
+	g_wb.mqtt_published = false;
 }
 
 /* mqtt.begin() */
-static bool esp_mqtt_setup(struct wifi_bridge *wb, const char* client_id, const char* user, const char* pass, uint16_t keep_alive, bool clean_seasion)
+bool esp_mqtt_setup(struct wifi_bridge *wb, const char* client_id, const char* user, const char* pass, uint16_t keep_alive, bool clean_seasion)
 {
 	struct esp_data *e = &wb->ed;
 	struct mqtt_data *m = &wb->md;
@@ -627,6 +626,9 @@ void *wifi_bridge_init(void)
 	}
 
 	g_slip_fd = wb->fd;
+	wb->wifi_connected = false;
+	wb->mqtt_connected = false;
+	wb->mqtt_published = true;
 
 	esp_init(&wb->ed);
 	esp_enable(&wb->ed);
@@ -659,7 +661,7 @@ int wifi_bridge_unit_test(void **h_wb)
 
 	esp_wifi_connect(wb, "Xiaomi_FD26", "basicbox565");
 
-	while (!g_wifi_connected) {
+	while (!wb->wifi_connected) {
 		esp_process(&wb->ed);
 	}
 
@@ -667,7 +669,7 @@ int wifi_bridge_unit_test(void **h_wb)
 		bsc_info("wait for mqtt setup\n");
 	}
 	bsc_info("mqtt setup settled.\n");
-#if 0
+#if 1
 	while (!esp_mqtt_lwt(wb, "/lwt", "offline", 0, 0)) {
 		bsc_info("wait for mqtt lwt\n");
 	}
@@ -675,7 +677,7 @@ int wifi_bridge_unit_test(void **h_wb)
 #endif
 	esp_mqtt_connect(wb, "123.57.208.39", 1883, false);
 
-	while (!g_mqtt_connected) {
+	while (!wb->mqtt_connected) {
 		esp_process(&wb->ed);
 	}
 

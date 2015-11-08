@@ -62,7 +62,7 @@
 #define NET_INTF_WIFI		1
 #define NET_INTF_ETH		2
 
-typedef void (*mqtt_msg_handler_t)(char *, int, char *, int);
+typedef void (*mqtt_msg_handler_t)(char *topic, int topic_len, char *payload, int payload_len);
 
 struct mqtt_param {
 	uint8_t wbuf[MQTT_BUF_MAX_LEN];
@@ -70,6 +70,8 @@ struct mqtt_param {
 	uint8_t uid[BSCAPP_UID_LEN];
 	uint8_t username[MQTT_USERNAME_LEN];
 	uint8_t password[MQTT_PASSWORD_LEN];
+	uint8_t ssid[32];
+	uint8_t psk[32];
 };
 
 #endif /* __APP_UTILS_H__ */
