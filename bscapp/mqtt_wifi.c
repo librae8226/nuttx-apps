@@ -126,10 +126,72 @@ int mqtt_wifi_disconnect(void *h_mw)
 	return OK;
 }
 
+enum wifi_init_stat {
+	WIFI_INIT_STATE_0 = 0,
+	WIFI_INIT_STATE_1,
+	WIFI_INIT_STATE_2,
+	WIFI_INIT_STATE_3
+};
+
+static int wifi_stat = WIFI_INIT_STATE_0;
+
 void *mqtt_wifi_init(struct mqtt_param *param)
 {
 	struct mqtt_wifi *mw = &g_mw;
+#if 1
+	switch (wifi_stat) {
+		case WIFI_INIT_STATE_0:
+			bzero(&g_mw, sizeof(struct mqtt_wifi));
+			mw->wb = (struct wifi_bridge *)wifi_bridge_init();
+			if (!mw->wb)
+				return NULL;
+			mw->mp = param;
+			pthread_mutex_init(&mw->lock, NULL);
+			esp_reset(&mw->wb->ed);
+			wifi_stat = WIFI_INIT_STATE_1;
+			break;
 
+		case WIFI_INIT_STATE_1:
+			if (!esp_ready(&mw->wb->ed)) {
+				bsc_info("wait for esp\n");
+			} else {
+				bsc_info("connecting wifi\n");
+				esp_wifi_connect(mw->wb, mw->mp->ssid, mw->mp->psk);
+				wifi_stat = WIFI_INIT_STATE_2;
+			}
+			break;
+
+		case WIFI_INIT_STATE_2:
+			if (!mw->wb->wifi_connected) {
+				mqtt_wifi_process(mw);
+			} else {
+				bsc_info("wifi connected.\n");
+				wifi_stat = WIFI_INIT_STATE_3;
+			}
+			break;
+
+		case WIFI_INIT_STATE_3:
+			if (!esp_mqtt_setup(mw->wb, mw->mp->uid, mw->mp->username, mw->mp->password, 30, 0)) {
+				bsc_info("wait for mqtt setup\n");
+			} else {
+				bsc_info("mqtt setup settled.\n");
+
+				/*
+				 * Now we should be ready and return the handle.
+				 * Should be navigate to state_0 if called again,
+				 * which means something is wrong and need re-init.
+				 */
+				wifi_stat = WIFI_INIT_STATE_0;
+				return (void *)&g_mw;
+			}
+			break;
+
+		default:
+			bsc_err("unknow wifi init state: %d\n", wifi_stat);
+			break;
+	}
+	return NULL;
+#else
 	bzero(&g_mw, sizeof(struct mqtt_wifi));
 
 	mw->wb = (struct wifi_bridge *)wifi_bridge_init();
@@ -155,6 +217,7 @@ void *mqtt_wifi_init(struct mqtt_param *param)
 	bsc_info("mqtt setup settled.\n");
 
 	return (void *)&g_mw;
+#endif
 }
 
 void mqtt_wifi_deinit(void **h_mw)
@@ -164,6 +227,7 @@ void mqtt_wifi_deinit(void **h_mw)
 		return;
 	pthread_mutex_destroy(&mw->lock);
 	wifi_bridge_deinit(mw->wb);
+	wifi_stat = WIFI_INIT_STATE_0;
 	*h_mw = NULL;
 }
 

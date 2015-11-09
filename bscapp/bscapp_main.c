@@ -779,6 +779,12 @@ static pthread_addr_t probe_eth_thread(pthread_addr_t arg)
 	bsc_info("running\n");
 
 	priv->net_eth_ready = false;
+
+	/* FIXME
+	 * It may stuck here for dhcp and eth thread cannot exit.
+	 * In fact we need to exit this thread if other net interface (wifi)
+	 * has got ready before eth, so that next time we can re-init eth.
+	 */
 	priv->h_me = mqtt_eth_init(&priv->mparam);
 
 	buffer_wget = malloc(512);
@@ -797,6 +803,12 @@ static pthread_addr_t probe_eth_thread(pthread_addr_t arg)
 			ret = wget(URL_INET_ACCESS, buffer_wget, 512, wget_callback, NULL);
 			if (ret == 0) {
 				priv->net_eth_ready = true;
+				/*
+				 * FIXME Trick here, when eth ready,
+				 * de-init wifi to reset wifi init state,
+				 * in case we'll need to re-init wifi then.
+				 */
+				mqtt_wifi_deinit(&priv->h_mw);
 				break;
 			} else {
 				bsc_info("wait for internet\n");
@@ -822,14 +834,15 @@ static pthread_addr_t probe_wifi_thread(pthread_addr_t arg)
 #if 0
 	mqtt_wifi_unit_test(&priv->mparam);
 #else
-	priv->h_mw = mqtt_wifi_init(&priv->mparam);
-	if (!priv->h_mw) {
-		bsc_err("init failed\n");
-		sleep(1);
-		return NULL;
+	while (!network_ready(priv)) {
+		priv->h_mw = mqtt_wifi_init(&priv->mparam);
+		if (!priv->h_mw) {
+			usleep(1);
+		} else {
+			priv->net_wifi_ready = true;
+		}
 	}
 #endif
-	priv->net_wifi_ready = true;
 	sleep(1);
 
 	bsc_info("exiting\n");
@@ -1006,6 +1019,8 @@ int bscapp_main(int argc, char *argv[])
 #endif
 		start_mqttpub(priv);
 		start_sample(priv);
+
+		/* TODO stop other net interface probe threads */
 
 		while (!priv->rework) {
 #ifdef MQTT_SELFPING_ENABLE
