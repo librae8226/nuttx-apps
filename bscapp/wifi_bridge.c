@@ -470,7 +470,7 @@ void esp_wifi_connect(struct wifi_bridge *wb, const char* ssid, const char* pass
 static void esp_mqtt_connected_cb(void* response)
 {
 	bsc_info("Connected\n");
-	g_wb.wifi_connected = true;
+	g_wb.mqtt_connected = true;
 }
 
 static void esp_mqtt_disconnected_cb(void* response)
@@ -487,11 +487,23 @@ static void esp_mqtt_data_cb(void* response)
 	char *payload = NULL;
 	int topic_len = 0;
 	int payload_len = 0;
-
+#if 1
+//	bsc_info("> argc: %d\n", esp_resp_getArgc(&rd));
+//	bsc_info("> argLen: %d\n", esp_resp_argLen(&rd));
 	topic = esp_resp_popString(&rd);
+	topic_len = strlen(topic);
+	bsc_info("> topic (%d): %s\n", topic_len, topic);
+//	bsc_info("> argLen: %d\n", esp_resp_argLen(&rd));
 	payload = esp_resp_popString(&rd);
-	bsc_info("Received topic: %s\n", topic);
-	bsc_info("Received data : %s\n", payload);
+	payload_len = strlen(payload);
+	bsc_info("> data (%d): %s\n", payload_len, payload);
+#else
+	bsc_info("argc: %d\n", esp_resp_getArgc(&rd));
+	bsc_info("argLen: %d\n", esp_resp_argLen(&rd));
+	bsc_info("Received topic: %s\n", esp_resp_popString(&rd));
+	bsc_info("argLen: %d\n", esp_resp_argLen(&rd));
+	bsc_info("Received data : %s\n", esp_resp_popString(&rd));
+#endif
 
 	if (g_wb.msg_handler)
 		g_wb.msg_handler(topic, topic_len, payload, payload_len);
@@ -669,7 +681,7 @@ int wifi_bridge_unit_test(void **h_wb)
 		bsc_info("wait for mqtt setup\n");
 	}
 	bsc_info("mqtt setup settled.\n");
-#if 1
+#if 0
 	while (!esp_mqtt_lwt(wb, "/lwt", "offline", 0, 0)) {
 		bsc_info("wait for mqtt lwt\n");
 	}
@@ -681,8 +693,8 @@ int wifi_bridge_unit_test(void **h_wb)
 		esp_process(&wb->ed);
 	}
 
-	esp_mqtt_subscribe(wb, "/down/stress", 1);
-	esp_mqtt_publish(wb, "/down/stress", "data0", 0, 0);
+	esp_mqtt_subscribe(wb, "/down/stress/#", 1);
+	esp_mqtt_publish(wb, "/down/stress/0", "data0", 0, 0);
 
 	uint32_t ms = 0;
 	char buf[32] = "";
@@ -690,9 +702,25 @@ int wifi_bridge_unit_test(void **h_wb)
 		esp_process(&wb->ed);
 		if (millis() - ms > 2000) {
 			bzero(buf, sizeof(buf));
-			sprintf(buf, "%d", millis());
-			bsc_info("time: %d, buf: %s\n", millis(), buf);
-			esp_mqtt_publish(wb, "/down/stress", buf, 0, 0);
+			sprintf(buf, "time %d", millis());
+			bsc_info("buf: %s\n", buf);
+			esp_mqtt_publish(wb, "/down/stress/1", buf, 0, 0);
+
+			bzero(buf, sizeof(buf));
+			sprintf(buf, "time %d", millis());
+			bsc_info("buf: %s\n", buf);
+			esp_mqtt_publish(wb, "/down/stress/2", buf, 0, 0);
+
+			bzero(buf, sizeof(buf));
+			sprintf(buf, "time %d", millis());
+			bsc_info("buf: %s\n", buf);
+			esp_mqtt_publish(wb, "/down/stress/3", buf, 0, 0);
+
+			bzero(buf, sizeof(buf));
+			sprintf(buf, "time %d", millis());
+			bsc_info("buf: %s\n", buf);
+			esp_mqtt_publish(wb, "/down/stress/4", buf, 0, 0);
+
 			ms = millis();
 		}
 	}

@@ -26,6 +26,15 @@
 
 struct mqtt_wifi g_mw;
 
+int mqtt_wifi_process(void *h_mw)
+{
+	struct mqtt_wifi *mw = (struct mqtt_wifi *)h_mw;
+	if (!mw)
+		return -EINVAL;
+	esp_process(&mw->wb->ed);
+	return OK;
+}
+
 int mqtt_wifi_subscribe(void *h_mw, char *topic, mqtt_msg_handler_t mh)
 {
 	struct mqtt_wifi *mw = (struct mqtt_wifi *)h_mw;
@@ -36,15 +45,6 @@ int mqtt_wifi_subscribe(void *h_mw, char *topic, mqtt_msg_handler_t mh)
 	mw->wb->msg_handler = mh;
 	esp_mqtt_subscribe(mw->wb, topic, 1);
 
-	return OK;
-}
-
-int mqtt_wifi_process(void *h_mw)
-{
-	struct mqtt_wifi *mw = (struct mqtt_wifi *)h_mw;
-	if (!mw)
-		return -EINVAL;
-	esp_process(&mw->wb->ed);
 	return OK;
 }
 
@@ -70,12 +70,11 @@ int mqtt_wifi_publish(void *h_mw, char *topic, char *payload)
 
 	/* do publish */
 	esp_mqtt_publish(mw->wb, topic, msgbuf, 0, 0);
-
+#if 0
 	/* FIXME set a timeout here? or just ignore published flag? */
-	while (!mw->wb->mqtt_published) {
-		bsc_info("wait until publish done\n");
-	}
-
+	while (!mw->wb->mqtt_published)
+		mqtt_wifi_process(mw);
+#endif
 	return ret;
 }
 
@@ -86,7 +85,8 @@ int mqtt_wifi_connect(void *h_mw)
 		return -EINVAL;
 	bsc_info("connecting to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
 	esp_mqtt_connect(mw->wb, MQTT_BROKER_IP, MQTT_BROKER_PORT, false);
-	while (!mw->wb->mqtt_connected);
+	while (!mw->wb->mqtt_connected)
+		mqtt_wifi_process(mw);
 	bsc_info("connected to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
 	return OK;
 }
@@ -98,7 +98,8 @@ int mqtt_wifi_disconnect(void *h_mw)
 		return -EINVAL;
 	esp_mqtt_disconnect(mw->wb);
 	bsc_info("disconnecting mqtt...\n");
-	while (mw->wb->mqtt_connected);
+	while (mw->wb->mqtt_connected)
+		mqtt_wifi_process(mw);
 	return OK;
 }
 
@@ -120,9 +121,8 @@ void *mqtt_wifi_init(struct mqtt_param *param)
 
 	bsc_info("connecting wifi\n");
 	esp_wifi_connect(mw->wb, mw->mp->ssid, mw->mp->psk);
-	while (!mw->wb->wifi_connected) {
-		esp_process(&mw->wb->ed);
-	}
+	while (!mw->wb->wifi_connected)
+		mqtt_wifi_process(mw);
 	bsc_info("wifi connected.\n");
 
 	while (!esp_mqtt_setup(mw->wb, mw->mp->uid, mw->mp->username, mw->mp->password, 120, 1))
@@ -146,7 +146,7 @@ int mqtt_wifi_unit_test(struct mqtt_param *param)
 	struct mqtt_wifi *mw = NULL;
 	int ret;
 	bsc_info("in\n");
-#if 0
+#if 1
 	mw = (struct mqtt_wifi *)mqtt_wifi_init(param);
 	if (!mw) {
 		bsc_err("failed\n");
@@ -154,8 +154,8 @@ int mqtt_wifi_unit_test(struct mqtt_param *param)
 	}
 
 	mqtt_wifi_connect(mw);
-	mqtt_wifi_subscribe(mw, "/down/stress", NULL);
-	mqtt_wifi_publish(mw, "/down/stress", "data0");
+	mqtt_wifi_subscribe(mw, "/down/stress/#", NULL);
+	mqtt_wifi_publish(mw, "/down/stress/0", "data0");
 
 	uint32_t ms = 0;
 	char buf[32] = "";
@@ -163,9 +163,25 @@ int mqtt_wifi_unit_test(struct mqtt_param *param)
 		mqtt_wifi_process(mw);
 		if (millis() - ms > 2000) {
 			bzero(buf, sizeof(buf));
-			sprintf(buf, "%d", millis());
-			bsc_info("time: %d, buf: %s\n", millis(), buf);
-			mqtt_wifi_publish(mw, "/down/stress", buf);
+			sprintf(buf, "time %d", millis());
+			bsc_info("buf: %s\n", buf);
+			mqtt_wifi_publish(mw, "/down/stress/1", buf);
+
+			bzero(buf, sizeof(buf));
+			sprintf(buf, "time %d", millis());
+			bsc_info("buf: %s\n", buf);
+			mqtt_wifi_publish(mw, "/down/stress/2", buf);
+
+			bzero(buf, sizeof(buf));
+			sprintf(buf, "time %d", millis());
+			bsc_info("buf: %s\n", buf);
+			mqtt_wifi_publish(mw, "/down/stress/3", buf);
+
+			bzero(buf, sizeof(buf));
+			sprintf(buf, "time %d", millis());
+			bsc_info("buf: %s\n", buf);
+			mqtt_wifi_publish(mw, "/down/stress/4", buf);
+
 			ms = millis();
 		}
 	}
