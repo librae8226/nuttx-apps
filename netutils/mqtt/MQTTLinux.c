@@ -84,7 +84,7 @@ int linux_read(Network * n, unsigned char *buffer, int len, int timeout_ms)
         {
           if (rc == 0 || rc == -ENOTCONN || rc == -ECONNRESET)
             {
-              ndbg("fatal recv error, rc: %d, errno: %d\n", rc, errno);
+              //ndbg("fatal recv error, rc: %d, errno: %d\n", rc, errno);
             }
           bytes = -1;
           break;
