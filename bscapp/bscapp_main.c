@@ -884,7 +884,7 @@ static int start_probe_wifi(struct bscapp_data *priv)
 
 static void network_probe(struct bscapp_data *priv)
 {
-//	start_probe_eth(priv);
+	start_probe_eth(priv);
 	start_probe_wifi(priv);
 }
 
@@ -995,7 +995,6 @@ int bscapp_main(int argc, char *argv[])
 		network_arbitrate(priv);
 
 		bsc_mqtt_connect(priv);
-
 		start_mqttsub(priv);
 
 		ret = sem_wait(&priv->sem);

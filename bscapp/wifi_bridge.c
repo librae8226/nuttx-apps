@@ -506,7 +506,7 @@ static void esp_mqtt_data_cb(void* response)
 
 static void esp_mqtt_published_cb(void* response)
 {
-	bsc_info("Published\n");
+	bsc_dbg("Published\n");
 	g_wb.mqtt_published = true;
 }
 
