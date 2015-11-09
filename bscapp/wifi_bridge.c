@@ -245,7 +245,7 @@ static void esp_protoCompletedCb(struct esp_data *e)
 
 	resp_crc =  *(uint16_t*)data_ptr;
 	if(crc != resp_crc) {
-		bsc_info("Invalid CRC\n");
+		bsc_err("Invalid CRC\n");
 		return;
 	}
 
@@ -479,31 +479,26 @@ static void esp_mqtt_disconnected_cb(void* response)
 	g_wb.mqtt_connected = false;
 }
 
+/* FIXME consider optimize these two buffer */
+static char g_topic[MQTT_TOPIC_LEN];
+static char g_payload[MQTT_BUF_MAX_LEN];
+
 static void esp_mqtt_data_cb(void* response)
 {
 	struct resp_data rd;
 	esp_resp_create(&rd, response);
-	char *topic = NULL;
-	char *payload = NULL;
+	char *topic = g_topic;
+	char *payload = g_payload;
 	int topic_len = 0;
 	int payload_len = 0;
-#if 1
-//	bsc_info("> argc: %d\n", esp_resp_getArgc(&rd));
-//	bsc_info("> argLen: %d\n", esp_resp_argLen(&rd));
-	topic = esp_resp_popString(&rd);
+
+	strcpy(topic, esp_resp_popString(&rd));
 	topic_len = strlen(topic);
-	bsc_info("> topic (%d): %s\n", topic_len, topic);
-//	bsc_info("> argLen: %d\n", esp_resp_argLen(&rd));
-	payload = esp_resp_popString(&rd);
+	bsc_dbg("> topic (%d): %s\n", topic_len, topic);
+
+	strcpy(payload, esp_resp_popString(&rd));
 	payload_len = strlen(payload);
-	bsc_info("> data (%d): %s\n", payload_len, payload);
-#else
-	bsc_info("argc: %d\n", esp_resp_getArgc(&rd));
-	bsc_info("argLen: %d\n", esp_resp_argLen(&rd));
-	bsc_info("Received topic: %s\n", esp_resp_popString(&rd));
-	bsc_info("argLen: %d\n", esp_resp_argLen(&rd));
-	bsc_info("Received data : %s\n", esp_resp_popString(&rd));
-#endif
+	bsc_dbg("> data (%d): %s\n", payload_len, payload);
 
 	if (g_wb.msg_handler)
 		g_wb.msg_handler(topic, topic_len, payload, payload_len);

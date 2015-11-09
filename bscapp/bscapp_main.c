@@ -423,7 +423,7 @@ static pthread_addr_t mqttsub_thread(pthread_addr_t arg)
 				ret = mqtt_eth_process(priv->h_me);
 				break;
 			case NET_INTF_WIFI:
-				ret = mqtt_wifi_process(priv->h_me);
+				ret = mqtt_wifi_process(priv->h_mw);
 				break;
 			default:
 				ret = -1;
@@ -452,8 +452,10 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 
 	do {
 		ret = bsc_mqtt_publish(priv, "/up/bs/checkin", priv->mparam.uid);
-		if (ret < 0)
-			bsc_warn("checkin failed: %d, retry", ret);
+		if (ret < 0) {
+			bsc_warn("checkin failed: %d, retry\n", ret);
+			sleep(1);
+		}
 	} while (ret < 0);
 
 	while (!priv->exit_mqttpub_thread) {
@@ -474,7 +476,7 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 			bsc_mqtt_publish(priv, t, payload);
 		}
 #endif
-		sleep(1);
+		sleep(5);
 	}
 	sleep(1);
 	bsc_info("exiting\n");
@@ -817,7 +819,7 @@ static pthread_addr_t probe_wifi_thread(pthread_addr_t arg)
 
 	bsc_info("running\n");
 	priv->net_wifi_ready = false;
-#if 1
+#if 0
 	mqtt_wifi_unit_test(&priv->mparam);
 #else
 	priv->h_mw = mqtt_wifi_init(&priv->mparam);
@@ -827,10 +829,8 @@ static pthread_addr_t probe_wifi_thread(pthread_addr_t arg)
 		return NULL;
 	}
 #endif
-	while (!network_ready(priv)) {
-		/* TODO probe & init wifi here */
-		sleep(1);
-	}
+	priv->net_wifi_ready = true;
+	sleep(1);
 
 	bsc_info("exiting\n");
 	return NULL;
@@ -888,6 +888,23 @@ static void network_probe(struct bscapp_data *priv)
 	start_probe_wifi(priv);
 }
 
+static void network_remove(struct bscapp_data *priv)
+{
+	switch (priv->net_intf) {
+		case NET_INTF_ETH:
+			mqtt_eth_deinit(&priv->h_me);
+			break;
+		case NET_INTF_WIFI:
+			mqtt_wifi_deinit(&priv->h_mw);
+			break;
+		default:
+			bsc_warn("unsupported net intf: %d\n", priv->net_intf);
+			break;
+	}
+	priv->net_wifi_ready = false;
+	priv->net_eth_ready = false;
+}
+
 static void network_arbitrate(struct bscapp_data *priv)
 {
 	if (priv->net_eth_ready) {
@@ -941,8 +958,7 @@ static int bscapp_deinit(struct bscapp_data *priv)
 	bsc_dbg("in\n");
 	pthread_mutex_destroy(&priv->mutex_exit);
 	sem_destroy(&priv->sem);
-	mqtt_wifi_deinit(&priv->h_mw);
-	mqtt_eth_deinit(&priv->h_me);
+	network_remove(priv);
 	bsc_dbg("out\n");
 	return OK;
 }
@@ -978,16 +994,14 @@ int bscapp_main(int argc, char *argv[])
 
 		network_arbitrate(priv);
 
-		bsc_info("param: 0x%p\n", &priv->mparam);
-		bsc_info("wbuf: 0x%p\n", priv->mparam.wbuf);
-		bsc_info("rbuf: 0x%p\n", priv->mparam.rbuf);
-
 		bsc_mqtt_connect(priv);
+
 		start_mqttsub(priv);
 
 		ret = sem_wait(&priv->sem);
 		if (ret != 0)
 			bsc_err("sem_wait failed\n");
+
 #if BUILD_SPECIAL != BSCAPP_BUILD_RELEASE
 		selftest_mqtt(priv);
 #endif
@@ -999,7 +1013,7 @@ int bscapp_main(int argc, char *argv[])
 			sem_init(&priv->sem_sp, 0, 0);
 			bsc_timer_start(&priv->timer_sp, MQTT_SELFPING_TIMEOUT, selfping_timeout);
 			priv->selfping = true;
-			bsc_dbg("waiting on semaphore\n" );
+			bsc_dbg("waiting on semaphore\n");
 			ret = sem_wait(&priv->sem_sp);
 			if (ret != 0) {
 				if (errno == EINTR)
@@ -1022,6 +1036,7 @@ int bscapp_main(int argc, char *argv[])
 		stop_thread(priv, priv->tid_mqttpub_thread, &priv->exit_mqttpub_thread);
 		stop_thread(priv, priv->tid_sample_thread, &priv->exit_sample_thread);
 		bsc_mqtt_disconnect(priv);
+		network_remove(priv);
 		bsc_info("---------- cut off ----------\n\n");
 		sleep(1);
 	} while (!priv->exit);

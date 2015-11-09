@@ -31,7 +31,13 @@ int mqtt_wifi_process(void *h_mw)
 	struct mqtt_wifi *mw = (struct mqtt_wifi *)h_mw;
 	if (!mw)
 		return -EINVAL;
+
+	pthread_mutex_lock(&mw->lock);
+
 	esp_process(&mw->wb->ed);
+
+	pthread_mutex_unlock(&mw->lock);
+
 	return OK;
 }
 
@@ -41,9 +47,12 @@ int mqtt_wifi_subscribe(void *h_mw, char *topic, mqtt_msg_handler_t mh)
 	if (!mw)
 		return -EINVAL;
 
-	bsc_info("subscribing to %s\n", topic);
+	pthread_mutex_lock(&mw->lock);
+
 	mw->wb->msg_handler = mh;
 	esp_mqtt_subscribe(mw->wb, topic, 1);
+
+	pthread_mutex_unlock(&mw->lock);
 
 	return OK;
 }
@@ -57,8 +66,7 @@ int mqtt_wifi_publish(void *h_mw, char *topic, char *payload)
 	if (mw == NULL || topic == NULL || payload == NULL)
 		return -EINVAL;
 
-	bsc_dbg("pub topic: %s\n", topic);
-	bsc_dbg("payload  : %s\n", payload);
+	pthread_mutex_lock(&mw->lock);
 
 	bzero(msgbuf, sizeof(msgbuf));
 	if (strlen(payload) > MQTT_BUF_MAX_LEN) {
@@ -75,6 +83,8 @@ int mqtt_wifi_publish(void *h_mw, char *topic, char *payload)
 	while (!mw->wb->mqtt_published)
 		mqtt_wifi_process(mw);
 #endif
+
+	pthread_mutex_unlock(&mw->lock);
 	return ret;
 }
 
@@ -83,11 +93,17 @@ int mqtt_wifi_connect(void *h_mw)
 	struct mqtt_wifi *mw = (struct mqtt_wifi *)h_mw;
 	if (!mw)
 		return -EINVAL;
+
+	pthread_mutex_lock(&mw->lock);
+
 	bsc_info("connecting to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
 	esp_mqtt_connect(mw->wb, MQTT_BROKER_IP, MQTT_BROKER_PORT, false);
 	while (!mw->wb->mqtt_connected)
 		mqtt_wifi_process(mw);
 	bsc_info("connected to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
+
+	pthread_mutex_unlock(&mw->lock);
+
 	return OK;
 }
 
@@ -96,10 +112,17 @@ int mqtt_wifi_disconnect(void *h_mw)
 	struct mqtt_wifi *mw = (struct mqtt_wifi *)h_mw;
 	if (!mw)
 		return -EINVAL;
+
+	pthread_mutex_lock(&mw->lock);
+
 	esp_mqtt_disconnect(mw->wb);
+#if 0 /* we may not need to wait */
 	bsc_info("disconnecting mqtt...\n");
 	while (mw->wb->mqtt_connected)
 		mqtt_wifi_process(mw);
+#endif
+	pthread_mutex_unlock(&mw->lock);
+
 	return OK;
 }
 
@@ -114,6 +137,8 @@ void *mqtt_wifi_init(struct mqtt_param *param)
 		return NULL;
 	mw->mp = param;
 
+	pthread_mutex_init(&mw->lock, NULL);
+
 	esp_reset(&mw->wb->ed);
 	while (!esp_ready(&mw->wb->ed))
 		bsc_info("wait for esp\n");
@@ -125,7 +150,7 @@ void *mqtt_wifi_init(struct mqtt_param *param)
 		mqtt_wifi_process(mw);
 	bsc_info("wifi connected.\n");
 
-	while (!esp_mqtt_setup(mw->wb, mw->mp->uid, mw->mp->username, mw->mp->password, 120, 1))
+	while (!esp_mqtt_setup(mw->wb, mw->mp->uid, mw->mp->username, mw->mp->password, 30, 0))
 		bsc_info("wait for mqtt setup\n");
 	bsc_info("mqtt setup settled.\n");
 
@@ -137,6 +162,7 @@ void mqtt_wifi_deinit(void **h_mw)
 	struct mqtt_wifi *mw = (struct mqtt_wifi *)*h_mw;
 	if (!mw)
 		return;
+	pthread_mutex_destroy(&mw->lock);
 	wifi_bridge_deinit(mw->wb);
 	*h_mw = NULL;
 }

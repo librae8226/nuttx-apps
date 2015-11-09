@@ -106,6 +106,8 @@ int mqtt_eth_publish(void *h_me, char *topic, char *payload)
 	msg.payload = (void *)msgbuf;
 	msg.payloadlen = strlen(msgbuf) + 1;
 
+	/* TODO add logic to ensure tcp is connected before publishing */
+
 #ifdef MQTT_MUTEX_ENABLE
 	ret = pthread_mutex_lock(&me->mutex_mqtt);
 	if (ret != 0)
@@ -139,10 +141,6 @@ int mqtt_eth_connect(void *h_me)
 	struct mqtt_eth *me = (struct mqtt_eth *)h_me;
 	if (!me)
 		return -EINVAL;
-
-	bsc_info("param: 0x%p\n", me->mp);
-	bsc_info("wbuf: 0x%p\n", me->mp->wbuf);
-	bsc_info("rbuf: 0x%p\n", me->mp->rbuf);
 
 	bsc_info("connecting to broker %s:%d\n", MQTT_BROKER_IP, MQTT_BROKER_PORT);
 	NewNetwork(&me->n);
