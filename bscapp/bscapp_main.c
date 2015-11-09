@@ -207,13 +207,54 @@ static void printstrbylen(char *msg, char *str, int len)
 	bsc_printf("\n");
 }
 
+static int exec_match_config(char *subtopic, char *content)
+{
+	int ret = OK;
+	char *token = NULL;
+
+	if (subtopic == NULL) {
+		bsc_info("no subtopic\n");
+	}
+	if (content == NULL) {
+		bsc_err("no content\n");
+		return -EINVAL;
+	}
+	bsc_info("subtopic: %s, content: %s\n", subtopic?subtopic:"null", content);
+
+	/*
+	 * FIXME
+	 * Hack here.
+	 * We'd better use .json for such config.
+	 */
+	if (strlen(content) > 4 &&
+	    content[0] == 's' &&
+	    content[1] == 's' &&
+	    content[2] == 'i' &&
+	    content[3] == 'd') {
+		token = strtok(content, ",");
+		if (token) {
+			bzero(g_priv.mparam.ssid, WIFI_SSID_LEN);
+			strncpy(g_priv.mparam.ssid, token+5, strlen(token+5));
+			bsc_info("saved ssid: %s\n", token+5);
+		}
+		token = strtok(NULL, ",");
+		if (token) {
+			bzero(g_priv.mparam.psk, WIFI_PSK_LEN);
+			strncpy(g_priv.mparam.psk, token+9, strlen(token+9));
+			bsc_info("saved psk: %s\n", token+9);
+		}
+	}
+
+	return ret;
+}
+
 static int exec_match_output(char *subtopic, char *act)
 {
 	int ret = OK;
 	struct output_resource *res = NULL;
 
 	if (subtopic == NULL) {
-		bsc_err("no subtopic\n", subtopic);
+		bsc_err("no subtopic\n");
 		return -EINVAL;
 	}
 
@@ -294,6 +335,10 @@ static void mqtt_msg_handler(char *topic, int topic_len, char *payload, int payl
 			bsc_warn("unsupported output %s with payload: %s\n", token, payload);
 	} else if (strcmp(token, "config") == 0) {
 		bsc_dbg("hit config\n");
+		token = strtok(NULL, "/");
+		ret = exec_match_config(token, payload);
+		if (ret != OK)
+			bsc_warn("unsupported config %s with payload: %s\n", token, payload);
 #ifdef MQTT_SELFPING_ENABLE
 	} else if (strcmp(token, "selfping") == 0) {
 		bsc_dbg("hit selfping\n");
@@ -780,7 +825,8 @@ static pthread_addr_t probe_eth_thread(pthread_addr_t arg)
 
 	priv->net_eth_ready = false;
 
-	/* FIXME
+	/*
+	 * FIXME
 	 * It may stuck here for dhcp and eth thread cannot exit.
 	 * In fact we need to exit this thread if other net interface (wifi)
 	 * has got ready before eth, so that next time we can re-init eth.

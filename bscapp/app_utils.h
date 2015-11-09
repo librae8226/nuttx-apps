@@ -58,6 +58,9 @@
 #define MQTT_USERNAME_LEN	32
 #define MQTT_PASSWORD_LEN	32
 
+#define WIFI_SSID_LEN		32
+#define WIFI_PSK_LEN		32
+
 #define NET_INTF_NULL		0
 #define NET_INTF_WIFI		1
 #define NET_INTF_ETH		2
@@ -70,8 +73,8 @@ struct mqtt_param {
 	uint8_t uid[BSCAPP_UID_LEN];
 	uint8_t username[MQTT_USERNAME_LEN];
 	uint8_t password[MQTT_PASSWORD_LEN];
-	uint8_t ssid[32];
-	uint8_t psk[32];
+	uint8_t ssid[WIFI_SSID_LEN];
+	uint8_t psk[WIFI_PSK_LEN];
 };
 
 #endif /* __APP_UTILS_H__ */
