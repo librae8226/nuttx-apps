@@ -948,7 +948,9 @@ static int start_probe_wifi(struct bscapp_data *priv)
 static void network_probe(struct bscapp_data *priv)
 {
 	start_probe_eth(priv);
+	usleep(100000);
 	start_probe_wifi(priv);
+	usleep(100000);
 }
 
 static void network_remove(struct bscapp_data *priv)
@@ -1007,8 +1009,8 @@ static int bscapp_init(struct bscapp_data *priv)
 	bsc_info("sub: %s\n", priv->topic_sub_header);
 	bsc_info("pub: %s\n", priv->topic_pub_header);
 
-	strcpy(priv->mparam.ssid, "Xiaomi_FD26");
-	strcpy(priv->mparam.psk, "basicbox565");
+	strcpy(priv->mparam.ssid, "wifi_ssid");
+	strcpy(priv->mparam.psk, "wifi_psk");
 	strcpy(priv->mparam.username, "admin");
 	strcpy(priv->mparam.password, "Isb_C4OGD4c3");
 

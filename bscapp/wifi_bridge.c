@@ -461,6 +461,7 @@ static void esp_wifi_cb(void* response)
 void esp_wifi_connect(struct wifi_bridge *wb, const char* ssid, const char* password)
 {
 	uint16_t crc;
+	bsc_dbg("ssid(%d): %s, psk(%d): %s\n", strlen(ssid), ssid, strlen(password), password);
 	crc = __esp_request_4(CMD_WIFI_CONNECT, (uint32_t)&esp_wifi_cb, 0, 2);
 	crc = __esp_request_3(crc,(uint8_t*)ssid, strlen(ssid));
 	crc = __esp_request_3(crc,(uint8_t*)password, strlen(password));
