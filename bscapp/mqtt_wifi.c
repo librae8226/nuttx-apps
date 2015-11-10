@@ -26,6 +26,19 @@
 
 struct mqtt_wifi g_mw;
 
+void esp_process(struct esp_data *e);
+void esp_reset(struct esp_data *e);
+bool esp_ready(struct esp_data *e);
+void esp_wifi_connect(struct wifi_bridge *wb, const char* ssid, const char* password);
+bool esp_mqtt_lwt(struct wifi_bridge *wb, const char* topic, const char* message, uint8_t qos, uint8_t retain);
+void esp_mqtt_connect(struct wifi_bridge *wb, const char* host, uint32_t port, bool security);
+void esp_mqtt_disconnect(struct wifi_bridge *wb);
+void esp_mqtt_subscribe(struct wifi_bridge *wb, const char* topic, uint8_t qos);
+void esp_mqtt_publish(struct wifi_bridge *wb, const char* topic, char* data, uint8_t qos, uint8_t retain);
+bool esp_mqtt_setup(struct wifi_bridge *wb, const char* client_id, const char* user, const char* pass, uint16_t keep_alive, bool clean_seasion);
+void *wifi_bridge_init(void);
+void wifi_bridge_deinit(struct wifi_bridge *wb);
+
 int mqtt_wifi_process(void *h_mw)
 {
 	struct mqtt_wifi *mw = (struct mqtt_wifi *)h_mw;
@@ -155,7 +168,7 @@ void *mqtt_wifi_init(struct mqtt_param *param)
 			if (!esp_ready(&mw->wb->ed)) {
 				bsc_info("wait for esp\n");
 			} else {
-				bsc_info("connecting wifi\n");
+				bsc_info("connecting wifi: %s (%s)\n", mw->mp->ssid, mw->mp->psk);
 				esp_wifi_connect(mw->wb, mw->mp->ssid, mw->mp->psk);
 				wifi_stat = WIFI_INIT_STATE_2;
 			}
@@ -182,7 +195,7 @@ void *mqtt_wifi_init(struct mqtt_param *param)
 				 * which means something is wrong and need re-init.
 				 */
 				wifi_stat = WIFI_INIT_STATE_0;
-				return (void *)&g_mw;
+				return (void *)mw;
 			}
 			break;
 
@@ -223,11 +236,11 @@ void *mqtt_wifi_init(struct mqtt_param *param)
 void mqtt_wifi_deinit(void **h_mw)
 {
 	struct mqtt_wifi *mw = (struct mqtt_wifi *)*h_mw;
+	wifi_stat = WIFI_INIT_STATE_0;
 	if (!mw)
 		return;
 	pthread_mutex_destroy(&mw->lock);
 	wifi_bridge_deinit(mw->wb);
-	wifi_stat = WIFI_INIT_STATE_0;
 	*h_mw = NULL;
 }
 

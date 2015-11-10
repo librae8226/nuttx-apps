@@ -804,49 +804,46 @@ static bool network_ready(struct bscapp_data *priv)
 	return priv->net_wifi_ready || priv->net_eth_ready;
 }
 
-static void wget_callback(FAR char **buffer, int offset, int datend,
-                          FAR int *buflen, FAR void *arg)
-{
-	int i;
-	bsc_info("len: %d\n", *buflen);
-	for (i = offset; i <= datend; i++)
-		bsc_printf("%c", (*buffer)[i]);
-	bsc_printf("\n");
-}
-
 static pthread_addr_t probe_eth_thread(pthread_addr_t arg)
 {
 	struct bscapp_data *priv = (struct bscapp_data *)arg;
-	struct in_addr iaddr;
-	int ret = -1;
-	char *buffer_wget;
 
 	bsc_info("running\n");
-
 	priv->net_eth_ready = false;
 
-	/*
-	 * FIXME
-	 * It may stuck here for dhcp and eth thread cannot exit.
-	 * In fact we need to exit this thread if other net interface (wifi)
-	 * has got ready before eth, so that next time we can re-init eth.
-	 */
-	priv->h_me = mqtt_eth_init(&priv->mparam);
-
-	buffer_wget = malloc(512);
-
-	/* FIXME should be able to recover */
-	DEBUGASSERT(buffer_wget);
-
 	while (!network_ready(priv)) {
+		/*
+		 * FIXME
+		 * It may stuck here for dhcp and eth thread cannot exit.
+		 * In fact we need to exit this thread if other net interface (wifi)
+		 * has got ready before eth, so that next time we can re-init eth.
+		 */
+		priv->h_me = mqtt_eth_init(&priv->mparam);
+		if (!priv->h_me) {
+			bsc_info("mqtt_eth_init failed, need retry\n");
+		} else {
+			priv->net_eth_ready = true;
+			/*
+			 * FIXME Trick here, when eth ready,
+			 * de-init wifi to reset wifi init state,
+			 * in case we'll need to re-init wifi then.
+			 */
+			mqtt_wifi_deinit(&priv->h_mw);
+		}
+#if 0
 		ret = netlib_get_ipv4addr("eth0", &iaddr);
 		if (ret < 0) {
 			bsc_err("netlib_get_ipv4addr failed.\n");
 			sleep(1);
 			continue;
 		}
+
 		if (iaddr.s_addr != 0x0 && iaddr.s_addr != 0xdeadbeef) {
+			buffer_wget = malloc(512);
+			/* FIXME should be able to recover */
+			DEBUGASSERT(buffer_wget);
 			ret = wget(URL_INET_ACCESS, buffer_wget, 512, wget_callback, NULL);
+			free(buffer_wget);
 			if (ret == 0) {
 				priv->net_eth_ready = true;
 				/*
@@ -864,8 +861,9 @@ static pthread_addr_t probe_eth_thread(pthread_addr_t arg)
 			bsc_info("wait for ip 0x%08x\n", iaddr.s_addr);
 			sleep(1);
 		}
+#endif
+		sleep(1);
 	}
-	free(buffer_wget);
 
 	bsc_info("exiting\n");
 	return NULL;
@@ -886,6 +884,12 @@ static pthread_addr_t probe_wifi_thread(pthread_addr_t arg)
 			usleep(1);
 		} else {
 			priv->net_wifi_ready = true;
+			/*
+			 * FIXME Trick here, when wifi ready,
+			 * de-init eth to reset eth init state,
+			 * in case we'll need to re-init eth then.
+			 */
+			mqtt_eth_deinit(&priv->h_me);
 		}
 	}
 #endif
@@ -1003,8 +1007,8 @@ static int bscapp_init(struct bscapp_data *priv)
 	bsc_info("sub: %s\n", priv->topic_sub_header);
 	bsc_info("pub: %s\n", priv->topic_pub_header);
 
-	strcpy(priv->mparam.ssid, "wifi_ssid");
-	strcpy(priv->mparam.psk, "wifi_psk");
+	strcpy(priv->mparam.ssid, "Xiaomi_FD26");
+	strcpy(priv->mparam.psk, "basicbox565");
 	strcpy(priv->mparam.username, "admin");
 	strcpy(priv->mparam.password, "Isb_C4OGD4c3");
 

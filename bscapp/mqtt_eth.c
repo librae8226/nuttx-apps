@@ -184,24 +184,87 @@ int mqtt_eth_disconnect(void *h_me)
 	return OK;
 }
 
+static void wget_callback(FAR char **buffer, int offset, int datend,
+                          FAR int *buflen, FAR void *arg)
+{
+	int i;
+	bsc_info("len: %d\n", *buflen);
+	for (i = offset; i <= datend; i++)
+		bsc_printf("%c", (*buffer)[i]);
+	bsc_printf("\n");
+}
+
+enum eth_init_stat {
+	ETH_INIT_STATE_0 = 0,
+	ETH_INIT_STATE_1,
+	ETH_INIT_STATE_2
+};
+
+static int eth_stat = ETH_INIT_STATE_0;
+
 void *mqtt_eth_init(struct mqtt_param *param)
 {
 	struct mqtt_eth *me = &g_me;
-
+	struct in_addr iaddr;
+	char *buffer_wget;
+	int ret;
+#if 1
+	switch (eth_stat) {
+		case ETH_INIT_STATE_0:
+			/* FIXME netinit has dhcp operations, do we need a timeout? */
+			if (nsh_netinit() != OK)
+				return NULL;
+			me->mp = param;
+			pthread_mutex_init(&me->mutex_mqtt, NULL);
+			eth_stat = ETH_INIT_STATE_1;
+			break;
+		case ETH_INIT_STATE_1:
+			if (netlib_get_ipv4addr("eth0", &iaddr) < 0) {
+				bsc_err("netlib_get_ipv4addr failed\n");
+			} else {
+				if (iaddr.s_addr != 0x0 && iaddr.s_addr != 0xdeadbeef) {
+					eth_stat = ETH_INIT_STATE_2;
+				} else {
+					bsc_info("wait for ip 0x%08x\n", iaddr.s_addr);
+				}
+			}
+			break;
+		case ETH_INIT_STATE_2:
+			buffer_wget = malloc(512);
+			/* FIXME should be able to recover */
+			DEBUGASSERT(buffer_wget);
+			ret = wget(URL_INET_ACCESS, buffer_wget, 512, wget_callback, NULL);
+			free(buffer_wget);
+			if (ret == 0) {
+				eth_stat = ETH_INIT_STATE_0;
+				return (void *)me;
+			} else {
+				bsc_info("wait for internet\n");
+			}
+			break;
+		default:
+			bsc_err("unknow eth init state: %d\n", eth_stat);
+			break;
+	}
+	return NULL;
+#else
 	bzero(me, sizeof(struct mqtt_eth));
 
 	me->mp = param;
 	pthread_mutex_init(&me->mutex_mqtt, NULL);
 
 	/* FIXME netinit has dhcp operations, do we need a timeout? */
-	nsh_netinit();
+	if (nsh_netinit() != OK)
+		return NULL;
 
 	return (void *)me;
+#endif
 }
 
 void mqtt_eth_deinit(void **h_me)
 {
 	struct mqtt_eth *me = (struct mqtt_eth *)*h_me;
+	eth_stat = ETH_INIT_STATE_0;
 	if (!me)
 		return;
 	pthread_mutex_destroy(&me->mutex_mqtt);

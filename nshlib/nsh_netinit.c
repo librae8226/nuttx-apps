@@ -219,8 +219,9 @@ static const uint16_t g_ipv6_netmask[8] =
  *
  ****************************************************************************/
 
-static void nsh_netinit_configure(void)
+static int nsh_netinit_configure(void)
 {
+  int ret = OK;
 #ifdef NSH_HAVE_NETDEV
 #ifdef CONFIG_NET_IPv4
   struct in_addr addr;
@@ -249,7 +250,12 @@ static void nsh_netinit_configure(void)
 
   /* Set the MAC address */
 
-  netlib_setmacaddr(NET_DEVNAME, mac);
+  ret = netlib_setmacaddr(NET_DEVNAME, mac);
+  if (ret != OK)
+    {
+      ndbg("netlib_setmacaddr failed.\n");
+      goto net_conf_exit;
+    }
 
 #endif /* CONFIG_NSH_NOMAC && CONFIG_NET_ETHERNET */
 
@@ -261,54 +267,105 @@ static void nsh_netinit_configure(void)
 #else
   addr.s_addr = 0;
 #endif
-  netlib_set_ipv4addr(NET_DEVNAME, &addr);
+  ret = netlib_set_ipv4addr(NET_DEVNAME, &addr);
+  if (ret != OK)
+    {
+      ndbg("netlib_set_ipv4addr failed.\n");
+      goto net_conf_exit;
+    }
 
   /* Set up the default router address */
 
   addr.s_addr = HTONL(CONFIG_NSH_DRIPADDR);
-  netlib_set_dripv4addr(NET_DEVNAME, &addr);
+  ret = netlib_set_dripv4addr(NET_DEVNAME, &addr);
+  if (ret != OK)
+    {
+      ndbg("netlib_set_dripv4addr failed.\n");
+      goto net_conf_exit;
+    }
 
   /* Setup the subnet mask */
 
   addr.s_addr = HTONL(CONFIG_NSH_NETMASK);
-  netlib_set_ipv4netmask(NET_DEVNAME, &addr);
+  ret = netlib_set_ipv4netmask(NET_DEVNAME, &addr);
+  if (ret != OK)
+    {
+      ndbg("netlib_set_ipv4netmask failed.\n");
+      goto net_conf_exit;
+    }
+
 #endif
 
 #ifdef CONFIG_NET_IPv6
 #ifdef CONFIG_NET_ICMPv6_AUTOCONF
   /* Perform ICMPv6 auto-configuration */
 
-  netlib_icmpv6_autoconfiguration(NET_DEVNAME);
+  ret = netlib_icmpv6_autoconfiguration(NET_DEVNAME);
+  if (ret != OK)
+    {
+      ndbg("netlib_icmpv6_autoconfiguration failed.\n");
+      goto net_conf_exit;
+    }
+
 
 #else /* CONFIG_NET_ICMPv6_AUTOCONF */
 
   /* Set up our fixed host address */
 
-  netlib_set_ipv6addr(NET_DEVNAME,
+  ret = netlib_set_ipv6addr(NET_DEVNAME,
                       (FAR const struct in6_addr *)g_ipv6_hostaddr);
+  if (ret != OK)
+    {
+      ndbg("netlib_set_ipv6addr failed.\n");
+      goto net_conf_exit;
+    }
+
 
   /* Set up the default router address */
 
-  netlib_set_dripv6addr(NET_DEVNAME,
+  ret = netlib_set_dripv6addr(NET_DEVNAME,
                         (FAR const struct in6_addr *)g_ipv6_draddr);
+  if (ret != OK)
+    {
+      ndbg("netlib_set_dripv6addr failed.\n");
+      goto net_conf_exit;
+    }
+
 
   /* Setup the subnet mask */
 
   netlib_set_ipv6netmask(NET_DEVNAME,
                         (FAR const struct in6_addr *)g_ipv6_netmask);
+  if (ret != OK)
+    {
+      ndbg("netlib_set_ipv6netmask failed.\n");
+      goto net_conf_exit;
+    }
+
 
 #endif /* CONFIG_NET_ICMPv6_AUTOCONF */
 #endif /* CONFIG_NET_IPv6 */
 
 #if defined(CONFIG_NSH_DNS)
   addr.s_addr = HTONL(CONFIG_NSH_DNSIPADDR);
-  netlib_set_ipv4dnsaddr(&addr);
+  ret = netlib_set_ipv4dnsaddr(&addr);
+  if (ret != OK)
+    {
+      ndbg("netlib_set_ipv4dnsaddr failed.\n");
+      goto net_conf_exit;
+    }
+
 #endif
 
 #if defined(CONFIG_NSH_DHCPC)
   /* Get the MAC address of the NIC */
 
-  netlib_getmacaddr(NET_DEVNAME, mac);
+  ret = netlib_getmacaddr(NET_DEVNAME, mac);
+  if (ret != OK)
+    {
+      ndbg("netlib_getmacaddr failed.\n");
+      goto net_conf_exit;
+    }
 
   /* Set up the DHCPC modules */
 
@@ -322,29 +379,51 @@ static void nsh_netinit_configure(void)
     {
         struct dhcpc_state ds;
         (void)dhcpc_request(handle, &ds);
-        netlib_set_ipv4addr(NET_DEVNAME, &ds.ipaddr);
+        ret = netlib_set_ipv4addr(NET_DEVNAME, &ds.ipaddr);
+        if (ret != OK)
+          {
+            ndbg("netlib_getmacaddr failed.\n");
+            goto dhcp_conf_exit;
+          }
 
         if (ds.netmask.s_addr != 0)
           {
-            netlib_set_ipv4netmask(NET_DEVNAME, &ds.netmask);
+            ret = netlib_set_ipv4netmask(NET_DEVNAME, &ds.netmask);
+            if (ret != OK)
+              {
+                ndbg("netlib_set_ipv4netmask failed.\n");
+                goto dhcp_conf_exit;
+              }
           }
 
         if (ds.default_router.s_addr != 0)
           {
-            netlib_set_dripv4addr(NET_DEVNAME, &ds.default_router);
+            ret = netlib_set_dripv4addr(NET_DEVNAME, &ds.default_router);
+            if (ret != OK)
+              {
+                ndbg("netlib_set_dripv4netmask failed.\n");
+                goto dhcp_conf_exit;
+              }
           }
 
         if (ds.dnsaddr.s_addr != 0)
           {
-            netlib_set_ipv4dnsaddr(&ds.dnsaddr);
+            ret = netlib_set_ipv4dnsaddr(&ds.dnsaddr);
+            if (ret != OK)
+              {
+                ndbg("netlib_set_ipv4dnsaddr failed.\n");
+                goto dhcp_conf_exit;
+              }
           }
-
-        dhcpc_close(handle);
+        goto dhcp_conf_exit;
     }
 #endif
 #endif /* NSH_HAVE_NETDEV */
-
+dhcp_conf_exit:
+  dhcpc_close(handle);
+net_conf_exit:
   nvdbg("Exit\n");
+  return ret;
 }
 
 /****************************************************************************
@@ -615,11 +694,18 @@ errout:
 #ifdef CONFIG_NSH_NETINIT_THREAD
 static pthread_addr_t nsh_netinit_thread(pthread_addr_t arg)
 {
+  int ret;
+
   nvdbg("Entry\n");
 
   /* Configure the network */
 
-  nsh_netinit_configure();
+  ret = nsh_netinit_configure();
+  if (ret != OK)
+    {
+      ndbg("netinit failed.\n");
+      return NULL;
+    }
 
 #ifdef CONFIG_NSH_NETINIT_MONITOR
   /* Monitor the network status */
@@ -682,10 +768,16 @@ int nsh_netinit(void)
   return OK;
 
 #else
+  int ret = OK;
+
   /* Perform network initialization sequentially */
 
-  nsh_netinit_configure();
-  return OK;
+  ret = nsh_netinit_configure();
+  if (ret != OK)
+    {
+      ndbg("netinit failed.\n");
+    }
+  return ret;
 #endif
 }
 

@@ -50,13 +50,15 @@
 #define BSCAPP_UID_LEN		16
 #define MQTT_BUF_MAX_LEN	128
 #define MQTT_CMD_TIMEOUT	1000
-#define MQTT_SELFPING_TIMEOUT	30
-#define MQTT_SELFPING_INTERVAL  5
 #define MQTT_TOPIC_LEN		128
 #define MQTT_TOPIC_HEADER_LEN	64
 #define MQTT_SUBTOPIC_LEN	32
 #define MQTT_USERNAME_LEN	32
 #define MQTT_PASSWORD_LEN	32
+
+/* it takes at most 60s to discover connection lost */
+#define MQTT_SELFPING_TIMEOUT	30
+#define MQTT_SELFPING_INTERVAL	30
 
 #define WIFI_SSID_LEN		32
 #define WIFI_PSK_LEN		32
@@ -76,5 +78,7 @@ struct mqtt_param {
 	uint8_t ssid[WIFI_SSID_LEN];
 	uint8_t psk[WIFI_PSK_LEN];
 };
+
+uint32_t millis(void);
 
 #endif /* __APP_UTILS_H__ */
