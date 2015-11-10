@@ -827,12 +827,6 @@ static pthread_addr_t probe_eth_thread(pthread_addr_t arg)
 			bsc_info("mqtt_eth_init failed, need retry\n");
 		} else {
 			priv->net_eth_ready = true;
-			/*
-			 * FIXME Trick here, when eth ready,
-			 * de-init wifi to reset wifi init state,
-			 * in case we'll need to re-init wifi then.
-			 */
-			mqtt_wifi_deinit(&priv->h_mw);
 		}
 #if 0
 		ret = netlib_get_ipv4addr("eth0", &iaddr);
@@ -888,12 +882,6 @@ static pthread_addr_t probe_wifi_thread(pthread_addr_t arg)
 			usleep(1);
 		} else {
 			priv->net_wifi_ready = true;
-			/*
-			 * FIXME Trick here, when wifi ready,
-			 * de-init eth to reset eth init state,
-			 * in case we'll need to re-init eth then.
-			 */
-			mqtt_eth_deinit(&priv->h_me);
 		}
 	}
 #endif
@@ -981,12 +969,19 @@ static void network_remove(struct bscapp_data *priv)
 
 static void network_arbitrate(struct bscapp_data *priv)
 {
+	/*
+	 * FIXME Trick here, when some net interface ready,
+	 * de-init the others to reset their init state,
+	 * in case we'll need to re-init them.
+	 */
 	if (priv->net_eth_ready) {
 		priv->net_intf = NET_INTF_ETH;
 		bsc_info("use ethernet\n");
+		mqtt_wifi_deinit(&priv->h_mw);
 	} else if (priv->net_wifi_ready) {
 		priv->net_intf = NET_INTF_WIFI;
 		bsc_info("use wifi\n");
+		mqtt_eth_deinit(&priv->h_me);
 	} else {
 		DEBUGASSERT(0); /* FIXME: shouldn't happen */
 	}
