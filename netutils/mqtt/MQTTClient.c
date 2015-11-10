@@ -35,8 +35,11 @@ int sendPacket(Client* c, int length, Timer* timer)
     while (sent < length && !expired(timer))
     {
         rc = c->ipstack->mqttwrite(c->ipstack, &c->buf[sent], length, left_ms(timer));
-        if (rc < 0)  // there was an error writing the data
+        if (rc < 0) {
+            // there was an error writing the data
+            usleep(10000);
             break;
+        }
         sent += rc;
     }
     if (sent == length)
@@ -215,7 +218,7 @@ int keepalive(Client* c)
 		nvdbg("pingreq\n");
 	    }
 	    else
-		ndbg("pingreq failed!\n");
+		nvdbg("pingreq failed!\n");
         }
     }
 

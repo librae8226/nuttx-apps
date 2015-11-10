@@ -242,6 +242,10 @@ static int exec_match_config(char *subtopic, char *content)
 			bzero(g_priv.mparam.psk, WIFI_PSK_LEN);
 			strncpy(g_priv.mparam.psk, token+9, strlen(token+9));
 			bsc_info("saved psk: %s\n", token+9);
+
+			/* now we do rework and get network re-inited. */
+			bsc_info("restarting network threads\n");
+			g_priv.rework = true;
 		}
 	}
 
@@ -955,6 +959,7 @@ static void network_probe(struct bscapp_data *priv)
 
 static void network_remove(struct bscapp_data *priv)
 {
+#if 0
 	switch (priv->net_intf) {
 		case NET_INTF_ETH:
 			mqtt_eth_deinit(&priv->h_me);
@@ -966,6 +971,10 @@ static void network_remove(struct bscapp_data *priv)
 			bsc_warn("unsupported net intf: %d\n", priv->net_intf);
 			break;
 	}
+#else
+	mqtt_eth_deinit(&priv->h_me);
+	mqtt_wifi_deinit(&priv->h_mw);
+#endif
 	priv->net_wifi_ready = false;
 	priv->net_eth_ready = false;
 }
@@ -1070,7 +1079,9 @@ int bscapp_main(int argc, char *argv[])
 		selftest_mqtt(priv);
 #endif
 		start_mqttpub(priv);
+		usleep(100000);
 		start_sample(priv);
+		usleep(100000);
 
 		/* TODO stop other net interface probe threads */
 
@@ -1102,6 +1113,7 @@ int bscapp_main(int argc, char *argv[])
 		stop_thread(priv, priv->tid_mqttpub_thread, &priv->exit_mqttpub_thread);
 		stop_thread(priv, priv->tid_sample_thread, &priv->exit_sample_thread);
 		bsc_mqtt_disconnect(priv);
+		sleep(1); /* wait a bit for disconnect packet flushing */
 		network_remove(priv);
 		bsc_info("---------- cut off ----------\n\n");
 		sleep(1);
