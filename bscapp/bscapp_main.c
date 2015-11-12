@@ -195,6 +195,7 @@ int mqtt_wifi_process(void *h_mw);
 int mqtt_wifi_publish(void *h_mw, char *topic, char *payload);
 int mqtt_wifi_connect(void *h_mw);
 int mqtt_wifi_disconnect(void *h_mw);
+int bsc_modbus_main(int argc, char *argv[]);
 
 static void printstrbylen(char *msg, char *str, int len)
 {
@@ -802,9 +803,14 @@ err_out_timer_create:
 	return ERROR;
 }
 
+static inline int start_bsc_modbus(struct bscapp_data *priv)
+{
+	char *argv[] = {"bsc_modbus", "-e"};
+	return bsc_modbus_main(2, argv);
+}
+
 static bool network_ready(struct bscapp_data *priv)
 {
-//	bsc_dbg("? wait...\n");
 	return priv->net_wifi_ready || priv->net_eth_ready;
 }
 
@@ -827,6 +833,7 @@ static pthread_addr_t probe_eth_thread(pthread_addr_t arg)
 			bsc_info("mqtt_eth_init failed, need retry\n");
 		} else {
 			priv->net_eth_ready = true;
+			start_bsc_modbus(priv);
 		}
 #if 0
 		ret = netlib_get_ipv4addr("eth0", &iaddr);
@@ -960,6 +967,8 @@ static void network_remove(struct bscapp_data *priv)
 			break;
 	}
 #else
+	char *argv[] = {"bsc_modbus", "-d"};
+	bsc_modbus_main(2, argv);
 	mqtt_eth_deinit(&priv->h_me);
 	mqtt_wifi_deinit(&priv->h_mw);
 #endif
