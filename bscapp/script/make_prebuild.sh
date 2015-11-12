@@ -17,4 +17,4 @@ else
 	release_type='dev'
 fi
 
-cp -v $src_bin $dst_dir/nuttx_bscapp_g`git show --pretty="%h" | head -n 1`_`date +%Y%m%d`.`echo $release_type`.bin
+cp -v $src_bin $dst_dir/nuttx_bscapp_`git describe --tags`_`date +%Y%m%d`.`echo $release_type`.bin
