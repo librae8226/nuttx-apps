@@ -41,7 +41,7 @@ struct modbus_state_s
 
 static inline int modbus_initialize(void);
 static void *modbus_pollthread(void *pvarg);
-static inline int modbus_create_pollthread(void);
+static inline int modbus_start(void);
 static void modbus_showusage(FAR const char *progname, int exitcode);
 
 static struct modbus_state_s g_modbus;
@@ -202,14 +202,14 @@ static void *modbus_pollthread(void *pvarg)
 }
 
 /****************************************************************************
- * Name: modbus_create_pollthread
+ * Name: modbus_start
  *
  * Description:
  *   Start the ModBus polling thread
  *
  ****************************************************************************/
 
-static inline int modbus_create_pollthread(void)
+static inline int modbus_start(void)
 {
 	int ret;
 
@@ -224,6 +224,39 @@ static inline int modbus_create_pollthread(void)
 	}
 
 	return ret;
+}
+
+/****************************************************************************
+ * Name: modbus_stop
+ *
+ * Description:
+ *   Stop the ModBus polling thread
+ *
+ ****************************************************************************/
+
+static inline int modbus_stop(void)
+{
+	int ret;
+
+	if (g_modbus.threadstate != RUNNING) {
+		bsc_info("not running\n");
+		return 0;
+	}
+
+	(void)pthread_mutex_lock(&g_modbus.lock);
+
+	g_modbus.threadstate = SHUTDOWN;
+
+	ret = pthread_kill(g_modbus.threadid, SIGUSR2);
+	if (ret != 0)
+		bsc_err("Failed to kill SIGUSR2, errno=%d\n", errno);
+
+	ret = pthread_join(g_modbus.threadid, NULL);
+	if (ret != 0)
+		bsc_err("pthread_join failed, ret=%d\n", ret);
+
+	(void)pthread_mutex_unlock(&g_modbus.lock);
+	return 0;
 }
 
 /****************************************************************************
@@ -274,26 +307,16 @@ int bsc_modbus_main(int argc, char *argv[])
 		{
 			case 'd': /* Disable protocol stack */
 				bsc_info("stopping\n");
-				(void)pthread_mutex_lock(&g_modbus.lock);
-				g_modbus.threadstate = SHUTDOWN;
-
-				ret = pthread_kill(g_modbus.threadid, SIGUSR2);
-				if (ret != 0)
-					bsc_err("Failed to kill SIGUSR2, errno=%d\n", errno);
-
-				ret = pthread_join(g_modbus.threadid, NULL);
-				if (ret != 0)
-					bsc_err("pthread_join failed, ret=%d\n", ret);
+				ret = modbus_stop();
 				bsc_info("stopped\n");
-				(void)pthread_mutex_unlock(&g_modbus.lock);
 				break;
 
 			case 'e': /* Enable the protocol stack */
 				bsc_info("starting\n");
-				ret = modbus_create_pollthread();
+				ret = modbus_start();
 				if (ret != OK)
 				{
-					bsc_err("modbus_create_pollthread failed: %d\n", ret);
+					bsc_err("modbus_start failed: %d\n", ret);
 					exit(EXIT_FAILURE);
 				}
 				break;
