@@ -65,8 +65,7 @@ static inline int modbus_initialize(void)
 
 	if (g_modbus.threadstate != STOPPED)
 	{
-		bsc_err("modbus_main: "
-				"ERROR: Bad state: %d\n", g_modbus.threadstate);
+		bsc_err("Bad state: %d\n", g_modbus.threadstate);
 		return EINVAL;
 	}
 
@@ -75,8 +74,7 @@ static inline int modbus_initialize(void)
 	status = pthread_mutex_init(&g_modbus.lock, NULL);
 	if (status != 0)
 	{
-		bsc_err("modbus_main: "
-				"ERROR: pthread_mutex_init failed: %d\n",  status);
+		bsc_err("pthread_mutex_init failed: %d\n",  status);
 		return status;
 	}
 
@@ -94,8 +92,7 @@ static inline int modbus_initialize(void)
 	mberr = eMBTCPInit(BSC_MODBUS_PORT);
 	if (mberr != MB_ENOERR)
 	{
-		bsc_err("modbus_main: "
-				"ERROR: eMBTCPInit failed: %d\n", mberr);
+		bsc_err("eMBTCPInit failed: %d\n", mberr);
 		goto errout_with_mutex;
 	}
 
@@ -110,8 +107,7 @@ static inline int modbus_initialize(void)
 	mberr = eMBSetSlaveID(0x34, true, g_slaveid, 3);
 	if (mberr != MB_ENOERR)
 	{
-		bsc_err("modbus_main: "
-				"ERROR: eMBSetSlaveID failed: %d\n", mberr);
+		bsc_err("eMBSetSlaveID failed: %d\n", mberr);
 		goto errout_with_modbus;
 	}
 
@@ -120,8 +116,7 @@ static inline int modbus_initialize(void)
 	mberr = eMBEnable();
 	if (mberr != MB_ENOERR)
 	{
-		bsc_err("modbus_main: "
-				"ERROR: eMBEnable failed: %d\n", mberr);
+		bsc_err("eMBEnable failed: %d\n", mberr);
 		goto errout_with_modbus;
 	}
 
@@ -159,13 +154,14 @@ static void *modbus_pollthread(void *pvarg)
 	eMBErrorCode mberr;
 	int ret;
 
+	bsc_info("running\n");
+
 	/* Initialize the modbus */
 
 	ret = modbus_initialize();
 	if (ret != OK)
 	{
-		bsc_err("modbus_main: "
-				"ERROR: modbus_initialize failed: %d\n", ret);
+		bsc_err("modbus_initialize failed: %d\n", ret);
 		return NULL;
 	}
 
@@ -201,6 +197,7 @@ static void *modbus_pollthread(void *pvarg)
 
 	(void)pthread_mutex_destroy(&g_modbus.lock);
 	g_modbus.threadstate = STOPPED;
+	bsc_info("exiting\n");
 	return NULL;
 }
 
@@ -219,7 +216,7 @@ static inline int modbus_create_pollthread(void)
 	if (g_modbus.threadstate == STOPPED)
 	{
 		ret = pthread_create(&g_modbus.threadid, NULL, modbus_pollthread, NULL);
-		pthread_setname_np(&g_modbus.threadid, "modbus_pollthread");
+		pthread_setname_np(g_modbus.threadid, "modbus_pollthread");
 	}
 	else
 	{
@@ -276,20 +273,28 @@ int bsc_modbus_main(int argc, char *argv[])
 		switch (option)
 		{
 			case 'd': /* Disable protocol stack */
+				bsc_info("stopping\n");
 				(void)pthread_mutex_lock(&g_modbus.lock);
 				g_modbus.threadstate = SHUTDOWN;
+
+				ret = pthread_kill(g_modbus.threadid, SIGUSR2);
+				if (ret != 0)
+					bsc_err("Failed to kill SIGUSR2, errno=%d\n", errno);
+
+				ret = pthread_join(g_modbus.threadid, NULL);
+				if (ret != 0)
+					bsc_err("pthread_join failed, ret=%d\n", ret);
+				bsc_info("stopped\n");
 				(void)pthread_mutex_unlock(&g_modbus.lock);
 				break;
 
 			case 'e': /* Enable the protocol stack */
+				bsc_info("starting\n");
+				ret = modbus_create_pollthread();
+				if (ret != OK)
 				{
-					ret = modbus_create_pollthread();
-					if (ret != OK)
-					{
-						bsc_err("modbus_main: "
-								"ERROR: modbus_create_pollthread failed: %d\n", ret);
-						exit(EXIT_FAILURE);
-					}
+					bsc_err("modbus_create_pollthread failed: %d\n", ret);
+					exit(EXIT_FAILURE);
 				}
 				break;
 
@@ -309,9 +314,7 @@ int bsc_modbus_main(int argc, char *argv[])
 						break;
 
 					default:
-						bsc_err("modbus_main: "
-								"ERROR: Invalid thread state: %d\n",
-								g_modbus.threadstate);
+						bsc_err("Invalid thread state: %d\n", g_modbus.threadstate);
 						break;
 				}
 				break;
@@ -326,8 +329,7 @@ int bsc_modbus_main(int argc, char *argv[])
 				break;
 
 			default:
-				bsc_err("modbus_main: "
-						"ERROR: Unrecognized option: '%c'\n", option);
+				bsc_err("Unrecognized option: '%c'\n", option);
 				modbus_showusage(argv[0], EXIT_FAILURE);
 				break;
 		}
