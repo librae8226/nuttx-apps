@@ -209,6 +209,10 @@ xMBPortTCPPool( void )
         {
             ( void )prvbMBPortAcceptClient(  );
         }
+        else
+        {
+            return TRUE;
+        }
     }
     while( TRUE )
     {
