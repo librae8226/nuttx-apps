@@ -210,6 +210,36 @@ static void printstrbylen(char *msg, char *str, int len)
 	bsc_printf("\n");
 }
 
+#ifdef MQTT_JSON_ENABLE
+static int extract_json_value(char *value, char *json_str)
+{
+	cJSON *root, *obj;
+	int ret = OK;
+
+	if (!json_str || !value) {
+		bsc_err("invalid arguments\n");
+		return -EINVAL;
+	}
+
+	root = cJSON_Parse(json_str);
+	if (!root) {
+		bsc_err("json parse error before: %s\n", cJSON_GetErrorPtr());
+		return -EFAULT;
+	}
+
+	obj = cJSON_GetObjectItem(root, "value");
+	if (obj->type != cJSON_String) {
+		bsc_err("type not expected: %d\n", obj->type);
+		goto ext_json_value_err;
+	}
+	strcpy(value, obj->valuestring);
+
+ext_json_value_err:
+	cJSON_Delete(root);
+	return ret;
+}
+#endif /* MQTT_JSON_ENABLE */
+
 static int exec_match_config(char *subtopic, char *content)
 {
 	int ret = OK;
@@ -255,13 +285,18 @@ static int exec_match_config(char *subtopic, char *content)
 	return ret;
 }
 
-static int exec_match_output(char *subtopic, char *act)
+static int exec_match_output(char *subtopic, char *payload)
 {
 	int ret = OK;
 	struct output_resource *res = NULL;
+	char *act = NULL;
+#ifdef MQTT_JSON_ENABLE
+	char value[32];
+	bzero(value, sizeof(value));
+#endif
 
-	if (subtopic == NULL) {
-		bsc_err("no subtopic\n");
+	if (subtopic == NULL || payload == NULL) {
+		bsc_err("invalid args\n");
 		return -EINVAL;
 	}
 
@@ -271,6 +306,13 @@ static int exec_match_output(char *subtopic, char *act)
 			switch (res->type) {
 				case OUTPUT_RELAY:
 					bsc_dbg("hit relay %d\n", res->id);
+#ifdef MQTT_JSON_ENABLE
+					if (extract_json_value(value, payload) < 0)
+						break;
+					act = value;
+#else
+					act = payload;
+#endif
 					if (strcmp(act, "on") == 0) {
 						bsc_info("ACT RELAY%d: %s\n", res->id, act);
 						relays_setstat(res->id - 1, true);
