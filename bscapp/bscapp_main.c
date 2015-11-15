@@ -531,7 +531,9 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 	struct bscapp_data *priv = (struct bscapp_data *)arg;
 	char t[MQTT_TOPIC_LEN];
 	char payload[8];
+#ifdef MQTT_JSON_ENABLE
 	char bundle_payload[MQTT_BUF_MAX_LEN];
+#endif
 	struct input_resource *res = NULL;
 	int ret;
 
