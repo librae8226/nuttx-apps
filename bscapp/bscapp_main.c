@@ -20,6 +20,8 @@
 #include <apps/netutils/netlib.h>
 #include <apps/netutils/webclient.h>
 #include <apps/netutils/MQTTClient.h>
+#include <apps/netutils/cJSON.h>
+
 #include "app_utils.h"
 #include "mqtt_eth.h"
 #include "mqtt_wifi.h"
@@ -441,6 +443,40 @@ int bsc_mqtt_disconnect(struct bscapp_data *priv)
 	return ret;
 }
 
+static int generate_input_bundle(char *out, struct input_resource *map)
+{
+	struct input_resource *res = NULL;
+	cJSON *root = NULL;
+	char *p = NULL;
+	char value_str[8];
+
+	if (!out || !map) {
+		bsc_err("args invalid!\n");
+		return -EINVAL;
+	}
+
+	root = cJSON_CreateObject();
+	if (!root) {
+		bsc_err("json create failed\n");
+		return -EFAULT;
+	}
+
+	res = &map[0];
+	for (; res->name != NULL; res++) {
+		if (res->valid == false) {
+			bsc_dbg("%s isn't valid, continue\n", res->name);
+			continue;
+		}
+		sprintf(value_str, "%d", res->value);
+		cJSON_AddStringToObject(root, res->name, value_str);
+	}
+	p = cJSON_PrintUnformatted(root);
+	strcpy(out, p);
+	cJSON_Delete(root);
+	free(p);
+	return OK;
+}
+
 static pthread_addr_t mqttsub_thread(pthread_addr_t arg)
 {
 	struct bscapp_data *priv = (struct bscapp_data *)arg;
@@ -495,6 +531,7 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 	struct bscapp_data *priv = (struct bscapp_data *)arg;
 	char t[MQTT_TOPIC_LEN];
 	char payload[8];
+	char bundle_payload[MQTT_BUF_MAX_LEN];
 	struct input_resource *res = NULL;
 	int ret;
 
@@ -509,6 +546,13 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 	} while (ret < 0);
 
 	while (!priv->exit_mqttpub_thread) {
+#ifdef MQTT_JSON_ENABLE
+		sprintf(t, "%s%s", priv->topic_pub_header, "/input/bundle");
+		bzero(bundle_payload, MQTT_BUF_MAX_LEN);
+		if (generate_input_bundle(bundle_payload, input_map) < 0)
+			continue;
+		bsc_mqtt_publish(priv, t, bundle_payload);
+#else
 		res = &input_map[0];
 		for (; res->name != NULL; res++) {
 			if (res->valid == false) {
@@ -519,6 +563,7 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 			sprintf(payload, "%d", res->value);
 			bsc_mqtt_publish(priv, t, payload);
 		}
+#endif
 #ifdef MQTT_SELFPING_ENABLE
 		if (priv->selfping == true) {
 			sprintf(t, "%s/selfping", priv->topic_sub_header);
