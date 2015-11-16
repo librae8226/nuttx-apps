@@ -530,20 +530,9 @@ static pthread_addr_t mqttsub_thread(pthread_addr_t arg)
 	sprintf(t, "%s/#", priv->topic_sub_header);
 	bsc_mqtt_subscribe(priv, t);
 
-	ret = sem_getvalue(&priv->sem, &val);
+	ret = bsc_mqtt_publish(priv, "/up/bs/checkin", priv->mparam.uid);
 	if (ret < 0)
-		bsc_dbg("could not get semaphore value\n");
-	else
-		bsc_dbg("semaphore value: %d\n", val);
-
-	if (val < 0) {
-		bsc_dbg("posting semaphore\n");
-		ret = sem_post(&priv->sem);
-		if (ret != 0)
-			bsc_err("sem_post failed\n");
-	} else {
-		bsc_dbg("val > 0\n");
-	}
+		bsc_warn("checkin failed: %d, need retry\n", ret);
 
 	while (!priv->exit_mqttsub_thread) {
 		switch (priv->net_intf) {
@@ -580,14 +569,6 @@ static pthread_addr_t mqttpub_thread(pthread_addr_t arg)
 	int ret;
 
 	bsc_info("running\n");
-
-	do {
-		ret = bsc_mqtt_publish(priv, "/up/bs/checkin", priv->mparam.uid);
-		if (ret < 0) {
-			bsc_warn("checkin failed: %d, retry\n", ret);
-			sleep(1);
-		}
-	} while (ret < 0);
 
 	while (!priv->exit_mqttpub_thread) {
 #ifdef MQTT_JSON_ENABLE
@@ -1090,7 +1071,6 @@ static int bscapp_init(struct bscapp_data *priv)
 	bsc_dbg("in\n");
 
 	bzero(priv, sizeof(struct bscapp_data));
-	sem_init(&priv->sem, 0, 0);
 	pthread_mutex_init(&priv->mutex_exit, NULL);
 
 #if 0
@@ -1124,7 +1104,6 @@ static int bscapp_deinit(struct bscapp_data *priv)
 {
 	bsc_dbg("in\n");
 	pthread_mutex_destroy(&priv->mutex_exit);
-	sem_destroy(&priv->sem);
 	network_remove(priv);
 	bsc_dbg("out\n");
 	return OK;
@@ -1163,18 +1142,14 @@ int bscapp_main(int argc, char *argv[])
 
 		bsc_mqtt_connect(priv);
 		start_mqttsub(priv);
-
-		ret = sem_wait(&priv->sem);
-		if (ret != 0)
-			bsc_err("sem_wait failed\n");
-
+		usleep(10000);
 #if BUILD_SPECIAL != BSCAPP_BUILD_RELEASE
 		selftest_mqtt(priv);
 #endif
 		start_mqttpub(priv);
-		usleep(100000);
+		usleep(10000);
 		start_sample(priv);
-		usleep(100000);
+		usleep(10000);
 
 		/* TODO stop other net interface probe threads */
 

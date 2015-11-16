@@ -439,12 +439,16 @@ static void esp_wifi_cb(void* response)
 			case STATION_IDLE:
 				break;
 			case STATION_CONNECTING:
+				g_wb.wifi_connected = false;
 				break;
 			case STATION_WRONG_PASSWORD:
+				g_wb.wifi_connected = false;
 				break;
 			case STATION_NO_AP_FOUND:
+				g_wb.wifi_connected = false;
 				break;
 			case STATION_CONNECT_FAIL:
+				g_wb.wifi_connected = false;
 				break;
 			case STATION_GOT_IP:
 				g_wb.wifi_connected = true;

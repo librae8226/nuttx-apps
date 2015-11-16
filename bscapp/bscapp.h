@@ -21,7 +21,6 @@ struct bscapp_data {
 	pthread_t tid_probe_wifi_thread;
 
 	/* sync resources */
-	sem_t sem;
 	pthread_mutex_t mutex_exit;
 
 	/* flags */
