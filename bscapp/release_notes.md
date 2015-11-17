@@ -1,6 +1,17 @@
 Release Notes
 =============
 
+BSC Application v0.5.1
+----------------------
+
+Date: Nov 17, 2015
+Brief: Support Israel server.
+       And enable JSON format message to improve efficiency.
+
+Enabled Features:
+    * Support JSON format for both up & down message.
+
+
 BSC Application v0.5
 --------------------
 
