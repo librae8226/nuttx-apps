@@ -15,7 +15,7 @@
 /*
  * Comment out below lines to build release.
  */
-#define BUILD_SPECIAL		BSCAPP_BUILD_DEV
+#define BUILD_SPECIAL		BSCAPP_BUILD_RELEASE
 
 #if BUILD_SPECIAL != BSCAPP_BUILD_RELEASE
 //#define BSCAPP_DEBUG
