@@ -10,7 +10,7 @@
  */
 #define MQTT_SELFPING_ENABLE
 #define MQTT_MUTEX_ENABLE
-#define MQTT_JSON_ENABLE
+//#define MQTT_JSON_ENABLE
 
 /*
  * Comment out below lines to build release.

@@ -258,7 +258,6 @@ static void printstrbylen(char *msg, char *str, int len)
 	bsc_printf("\n");
 }
 
-#ifdef MQTT_JSON_ENABLE
 static int extract_json_value(char *value, char *json_str)
 {
 	cJSON *root, *obj;
@@ -286,7 +285,6 @@ ext_json_value_err:
 	cJSON_Delete(root);
 	return ret;
 }
-#endif /* MQTT_JSON_ENABLE */
 
 static int exec_match_config(char *subtopic, char *content)
 {
@@ -338,7 +336,7 @@ static int exec_match_output(char *subtopic, char *payload)
 	int ret = OK;
 	struct output_resource *res = NULL;
 	char *act = NULL;
-#ifdef MQTT_JSON_ENABLE
+#if 1
 	char value[32];
 	bzero(value, sizeof(value));
 #endif
@@ -354,7 +352,7 @@ static int exec_match_output(char *subtopic, char *payload)
 			switch (res->type) {
 				case OUTPUT_RELAY:
 					bsc_dbg("hit relay %d\n", res->id);
-#ifdef MQTT_JSON_ENABLE
+#if 1
 					if (extract_json_value(value, payload) < 0)
 						break;
 					act = value;
