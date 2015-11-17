@@ -38,14 +38,14 @@
 #define bsc_err(format, ...) \
 	syslog(LOG_ERR, "E/"EXTRA_FMT format EXTRA_ARG, ##__VA_ARGS__)
 
-#if BUILD_SPECIAL == BSCAPP_BUILD_TEST
+#if BUILD_SPECIAL == BSCAPP_BUILD_DEV
 #define MQTT_BROKER_IP		"123.57.208.39"
 #define MQTT_BROKER_PORT	1883
-#define URL_INET_ACCESS		"http://123.57.208.39:8080/config.json"
-#else
-#define MQTT_BROKER_IP		"123.57.208.39"
+#define URL_INET_ACCESS		"http://ipinfo.io"
+#else /* RELEASE & TEST */
+#define MQTT_BROKER_IP		"server.from-il.com"
 #define MQTT_BROKER_PORT	1883
-#define URL_INET_ACCESS		"http://123.57.208.39:8080/config.json"
+#define URL_INET_ACCESS		"http://ipinfo.io"
 #endif
 
 #define BSCAPP_UID_LEN		16
