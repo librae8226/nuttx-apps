@@ -96,17 +96,17 @@ eMBErrorCode eMBTCPDoInit(uint16_t ucTCPPort)
 
 void eMBTCPStart(void)
 {
-  ndbg("in\n");
-  ndbg("out\n");
+  nvdbg("in\n");
+  nvdbg("out\n");
 }
 
 void eMBTCPStop(void)
 {
-  ndbg("in\n");
+  nvdbg("in\n");
    /* Make sure that no more clients are connected. */
 
   vMBTCPPortDisable();
-  ndbg("out\n");
+  nvdbg("out\n");
 }
 
 eMBErrorCode eMBTCPReceive(uint8_t *pucRcvAddress, uint8_t **ppucFrame, uint16_t *pusLength)

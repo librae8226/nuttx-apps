@@ -374,7 +374,7 @@ eMBErrorCode eMBRegInputCB(uint8_t *buffer, uint16_t address, uint16_t nregs)
 	eMBErrorCode mberr = MB_ENOERR;
 	int          index;
 
-	bsc_info("in\n");
+	bsc_dbg("in\n");
 	if ((address >= BSC_MODBUS_REG_INPUT_START) &&
 			(address + nregs <=
 			 BSC_MODBUS_REG_INPUT_START +
@@ -394,7 +394,7 @@ eMBErrorCode eMBRegInputCB(uint8_t *buffer, uint16_t address, uint16_t nregs)
 		mberr = MB_ENOREG;
 	}
 
-	bsc_info("out, mberr: %d\n", mberr);
+	bsc_dbg("out, mberr: %d\n", mberr);
 	return mberr;
 }
 
