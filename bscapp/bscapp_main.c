@@ -1210,7 +1210,7 @@ int bscapp_main(int argc, char *argv[])
 			ret = sem_wait(&priv->sem_sp);
 			if (ret != 0) {
 				if (errno == EINTR)
-					bsc_err("sem_wait() interrupted by signal, timeout\n" );
+					bsc_warn("sem_wait() interrupted by signal\n" );
 				else
 					bsc_warn("sem_wait() unexpectedly interrupted\n" );
 			} else {
