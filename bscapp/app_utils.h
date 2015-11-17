@@ -41,15 +41,15 @@
 #if BUILD_SPECIAL == BSCAPP_BUILD_DEV
 #define MQTT_BROKER_IP		"123.57.208.39"
 #define MQTT_BROKER_PORT	1883
-#define URL_INET_ACCESS		"http://ipinfo.io"
+#define URL_INET_ACCESS		"http://73.223.250.65"
 #else /* RELEASE & TEST */
 #define MQTT_BROKER_IP		"server.from-il.com"
 #define MQTT_BROKER_PORT	1883
-#define URL_INET_ACCESS		"http://ipinfo.io"
+#define URL_INET_ACCESS		"http://73.223.250.65"
 #endif
 
 #define BSCAPP_UID_LEN		16
-#define MQTT_BUF_MAX_LEN	128
+#define MQTT_BUF_MAX_LEN	256
 #define MQTT_CMD_TIMEOUT	1000
 #define MQTT_TOPIC_LEN		128
 #define MQTT_TOPIC_HEADER_LEN	64

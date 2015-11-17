@@ -188,10 +188,12 @@ static void wget_callback(FAR char **buffer, int offset, int datend,
                           FAR int *buflen, FAR void *arg)
 {
 	int i;
-	bsc_info("len: %d\n", *buflen);
+	bsc_info("%s\n", &(*buffer)[offset]);
+#if 0
 	for (i = offset; i <= datend; i++)
 		bsc_printf("%c", (*buffer)[i]);
 	bsc_printf("\n");
+#endif
 }
 
 enum eth_init_stat {
@@ -233,6 +235,7 @@ void *mqtt_eth_init(struct mqtt_param *param)
 			buffer_wget = malloc(512);
 			/* FIXME should be able to recover */
 			DEBUGASSERT(buffer_wget);
+			bzero(buffer_wget, 512);
 			ret = wget(URL_INET_ACCESS, buffer_wget, 512, wget_callback, NULL);
 			free(buffer_wget);
 			if (ret == 0) {
