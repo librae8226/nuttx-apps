@@ -1,0 +1,19 @@
+#
+# For a description of the syntax of this configuration file,
+# see misc/tools/kconfig-language.txt.
+#
+
+menu "Neuron Application"
+
+config NEURON
+	bool "Support Neuron Application"
+	default n
+	---help---
+		This application is part of Linkgo Neural System.
+		It access the Neurite via UART in order to exchange information
+		with other nodes (may be Neurons).
+		For more details, please refer to:
+
+		http://linkgo.io
+
+endmenu
