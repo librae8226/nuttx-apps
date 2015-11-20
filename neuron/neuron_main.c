@@ -27,6 +27,7 @@ int neuron_main(int argc, char *argv[])
 #endif
 {
 	log_info("entry\n");
+	nr_display();
 	log_info("exited\n");
 	return OK;
 }
