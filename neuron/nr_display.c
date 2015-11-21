@@ -28,6 +28,8 @@
 #include <nuttx/nx/nxglib.h>
 #include <nuttx/nx/nxfonts.h>
 
+#include <apps/app_utils.h>
+
 #include "nr_display.h"
 
 
@@ -228,6 +230,16 @@ static void nxhello_center(FAR struct nxgl_point_s *pos,
   pos->y = (g_nxhello.yres - fontset->mxheight) / 2;
 }
 
+static void nx_display_conv_pos(FAR struct nxgl_point_s *pos, int x, int y)
+{
+  FAR const struct nx_font_s *fontset;
+
+  fontset = nxf_getfontset(g_nxhello.hfont);
+
+  pos->x = x * fontset->mxwidth;
+  pos->y = y * fontset->mxheight;
+}
+
 /****************************************************************************
  * Name: nxhello_initglyph
  ****************************************************************************/
@@ -415,7 +427,7 @@ void nxhello_hello(NXWINDOW hwnd)
   free(glyph);
 }
 
-void nx_display_str(NXWINDOW hwnd, char *str, int x, int y)
+void nx_display_str_in_pixel(NXWINDOW hwnd, char *str, int x, int y)
 {
   FAR const struct nx_font_s *fontset;
   FAR const struct nx_fontbitmap_s *fbm;
@@ -448,7 +460,7 @@ void nx_display_str(NXWINDOW hwnd, char *str, int x, int y)
 
   pos.x = x;
   pos.y = y;
-  printf("nxhello_hello: Position (%d,%d)\n", pos.x, pos.y);
+  log_dbg("Position (%d,%d)\n", pos.x, pos.y);
 
   /* Now we can say "hello" in the center of the display. */
 
@@ -728,6 +740,7 @@ int nr_display_init(void)
     }
   printf("nxhello_main: Screen resolution (%d,%d)\n", g_nxhello.xres, g_nxhello.yres);
 
+  usleep(100000);
   return OK;
 
 errout_with_nx:
@@ -749,12 +762,36 @@ int nr_display_deinit(void)
   return g_nxhello.code;
 }
 
+int nr_display_str_in_pixel(char *str, int px, int py)
+{
+  nx_display_str_in_pixel(g_nxhello.hbkgd, str, px, py);
+  return OK;
+}
+
 int nr_display_str(char *str, int x, int y)
 {
-  sleep(1);
-  nx_display_str(g_nxhello.hbkgd, str, x, y);
-  sleep(1);
+  FAR struct nxgl_point_s pos;
+  nx_display_conv_pos(&pos, x, y);
+  nx_display_str_in_pixel(g_nxhello.hbkgd, str, pos.x, pos.y);
   return OK;
+}
+
+int nr_display_clear_row(int row)
+{
+  FAR struct nxgl_point_s pos;
+  char clear_str[32];
+  memset(clear_str, ' ', sizeof(clear_str));
+  nx_display_conv_pos(&pos, 0, row);
+  nx_display_str_in_pixel(g_nxhello.hbkgd, clear_str, pos.x, pos.y);
+  return OK;
+}
+
+int nr_display_clear(void)
+{
+	int i;
+	for (i = 0; i < 16; i++)
+		nr_display_clear_row(i);
+	return OK;
 }
 
 int nr_display_main(int argc, char *argv[])
