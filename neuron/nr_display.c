@@ -304,10 +304,6 @@ static void nxhello_initglyph(FAR uint8_t *glyph, uint8_t height,
 #endif
 }
 
- /****************************************************************************
- * Public Functions
- ****************************************************************************/
-
 /****************************************************************************
  * Name: nxhello_hello
  *
@@ -353,6 +349,110 @@ void nxhello_hello(NXWINDOW hwnd)
   /* Now we can say "hello" in the center of the display. */
 
   for (ptr = g_hello; *ptr; ptr++)
+    {
+      /* Get the bitmap font for this ASCII code */
+
+      fbm = nxf_getbitmap(g_nxhello.hfont, *ptr);
+      if (fbm)
+        {
+          uint8_t fheight;      /* Height of this glyph (in rows) */
+          uint8_t fwidth;       /* Width of this glyph (in pixels) */
+          uint8_t fstride;      /* Width of the glyph row (in bytes) */
+
+          /* Get information about the font bitmap */
+
+          fwidth  = fbm->metric.width + fbm->metric.xoffset;
+          fheight = fbm->metric.height + fbm->metric.yoffset;
+          fstride = (fwidth * CONFIG_NEURON_DISPLAY_BPP + 7) >> 3;
+
+          /* Initialize the glyph memory to the background color */
+
+          nxhello_initglyph(glyph, fheight, fwidth, fstride);
+
+          /* Then render the glyph into the allocated memory */
+
+#if CONFIG_NX_NPLANES > 1
+# warning "More logic is needed for the case where CONFIG_NX_PLANES > 1"
+#endif
+          (void)RENDERER((FAR nxgl_mxpixel_t*)glyph, fheight, fwidth,
+                         fstride, fbm, CONFIG_NEURON_DISPLAY_FONTCOLOR);
+
+          /* Describe the destination of the font with a rectangle */
+
+          dest.pt1.x = pos.x;
+          dest.pt1.y = pos.y;
+          dest.pt2.x = pos.x + fwidth - 1;
+          dest.pt2.y = pos.y + fheight - 1;
+
+          /* Then put the font on the display */
+
+          src[0] = (FAR const void *)glyph;
+#if CONFIG_NX_NPLANES > 1
+# warning "More logic is needed for the case where CONFIG_NX_PLANES > 1"
+#endif
+          ret = nx_bitmap((NXWINDOW)hwnd, &dest, src, &pos, fstride);
+          if (ret < 0)
+            {
+              printf("nxhello_write: nx_bitmapwindow failed: %d\n", errno);
+            }
+
+           /* Skip to the right the width of the font */
+
+          pos.x += fwidth;
+        }
+      else
+        {
+           /* No bitmap (probably because the font is a space).  Skip to the
+            * right the width of a space.
+            */
+
+          pos.x += fontset->spwidth;
+        }
+    }
+
+  /* Free the allocated glyph */
+
+  free(glyph);
+}
+
+void nx_display_str(NXWINDOW hwnd, char *str, int x, int y)
+{
+  FAR const struct nx_font_s *fontset;
+  FAR const struct nx_fontbitmap_s *fbm;
+  FAR uint8_t *glyph;
+  FAR const char *ptr;
+  FAR struct nxgl_point_s pos;
+  FAR struct nxgl_rect_s dest;
+  FAR const void *src[CONFIG_NX_NPLANES];
+  unsigned int glyphsize;
+  unsigned int mxstride;
+  int ret;
+
+  /* Get information about the font we are going to use */
+
+  fontset = nxf_getfontset(g_nxhello.hfont);
+
+  /* Allocate a bit of memory to hold the largest rendered font */
+
+  mxstride  = (fontset->mxwidth * CONFIG_NEURON_DISPLAY_BPP + 7) >> 3;
+  glyphsize = (unsigned int)fontset->mxheight * mxstride;
+  glyph     = (FAR uint8_t*)malloc(glyphsize);
+
+  /* NOTE: no check for failure to allocate the memory.  In a real application
+   * you would need to handle that event.
+   */
+
+  /* Get a position so the the "Hello, World!" string will be centered on the
+   * display.
+   */
+
+  pos.x = x;
+  pos.y = y;
+  printf("nxhello_hello: Position (%d,%d)\n", pos.x, pos.y);
+
+  /* Now we can say "hello" in the center of the display. */
+
+  for (ptr = str; *ptr; ptr++)
     {
       /* Get the bitmap font for this ASCII code */
 
@@ -568,11 +668,96 @@ static inline int nxhello_initialize(void)
  * Public Functions
  ****************************************************************************/
 
-/****************************************************************************
- * Name: nxhello_main
- ****************************************************************************/
+int nr_display_init(void)
+{
+  nxgl_mxpixel_t color;
+  int ret;
 
-int nr_display(int argc, char *argv[])
+  /* Initialize NX */
+
+  ret = nxhello_initialize();
+  printf("nxhello_main: NX handle=%p\n", g_nxhello.hnx);
+  if (!g_nxhello.hnx || ret < 0)
+    {
+      printf("nxhello_main: Failed to get NX handle: %d\n", errno);
+      g_nxhello.code = NXEXIT_NXOPEN;
+      goto errout;
+    }
+
+  /* Get the default font handle */
+
+  g_nxhello.hfont = nxf_getfonthandle(CONFIG_NEURON_DISPLAY_FONTID);
+  if (!g_nxhello.hfont)
+    {
+      printf("nxhello_main: Failed to get font handle: %d\n", errno);
+      g_nxhello.code = NXEXIT_FONTOPEN;
+      goto errout;
+    }
+
+  /* Set the background to the configured background color */
+
+  printf("nxhello_main: Set background color=%d\n",
+         CONFIG_NEURON_DISPLAY_BGCOLOR);
+
+  color = CONFIG_NEURON_DISPLAY_BGCOLOR;
+  ret = nx_setbgcolor(g_nxhello.hnx, &color);
+  if (ret < 0)
+    {
+      printf("nxhello_main: nx_setbgcolor failed: %d\n", errno);
+      g_nxhello.code = NXEXIT_NXSETBGCOLOR;
+      goto errout_with_nx;
+    }
+
+  /* Get the background window */
+
+  ret = nx_requestbkgd(g_nxhello.hnx, &g_nxhellocb, NULL);
+  if (ret < 0)
+    {
+      printf("nxhello_main: nx_setbgcolor failed: %d\n", errno);
+      g_nxhello.code = NXEXIT_NXREQUESTBKGD;
+      goto errout_with_nx;
+    }
+
+  /* Wait until we have the screen resolution.  We'll have this immediately
+   * unless we are dealing with the NX server.
+   */
+
+  while (!g_nxhello.havepos)
+    {
+      (void)sem_wait(&g_nxhello.sem);
+    }
+  printf("nxhello_main: Screen resolution (%d,%d)\n", g_nxhello.xres, g_nxhello.yres);
+
+  return OK;
+
+errout_with_nx:
+  printf("nxhello_main: Close NX\n");
+  nx_close(g_nxhello.hnx);
+errout:
+  return g_nxhello.code;
+}
+
+int nr_display_deinit(void)
+{
+  /* Release background */
+
+  (void)nx_releasebkgd(g_nxhello.hbkgd);
+
+  /* Close NX */
+  printf("nxhello_main: Close NX\n");
+  nx_close(g_nxhello.hnx);
+  return g_nxhello.code;
+}
+
+int nr_display_str(char *str, int x, int y)
+{
+  sleep(1);
+  nx_display_str(g_nxhello.hbkgd, str, x, y);
+  sleep(1);
+  return OK;
+}
+
+int nr_display_main(int argc, char *argv[])
 {
   nxgl_mxpixel_t color;
   int ret;

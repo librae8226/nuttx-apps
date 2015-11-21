@@ -26,8 +26,21 @@ int main(int argc, FAR char *argv[])
 int neuron_main(int argc, char *argv[])
 #endif
 {
+	int ret = OK;
+
 	log_info("entry\n");
-	nr_display();
+
+	ret = nr_display_init();
+	if (ret < 0) {
+		log_info("entry\n");
+		goto neuron_exit;
+	}
+
+	nr_display_str("hi linkgo.io", 0, 0);
+
+	nr_display_deinit();
+
+neuron_exit:
 	log_info("exited\n");
-	return OK;
+	return ret;
 }
