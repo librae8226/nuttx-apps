@@ -43,7 +43,7 @@ PRIORITY = SCHED_PRIORITY_DEFAULT
 STACKSIZE = 2048
 
 ASRCS =
-CSRCS = nr_display.c
+CSRCS = nr_display.c neurite.c
 MAINSRC = neuron_main.c
 
 AOBJS = $(ASRCS:.S=$(OBJEXT))

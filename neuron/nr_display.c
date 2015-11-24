@@ -460,7 +460,7 @@ void nx_display_str_in_pixel(NXWINDOW hwnd, char *str, int x, int y)
 
   pos.x = x;
   pos.y = y;
-  log_dbg("Position (%d,%d)\n", pos.x, pos.y);
+  //log_dbg("Position (%d,%d)\n", pos.x, pos.y);
 
   /* Now we can say "hello" in the center of the display. */
 

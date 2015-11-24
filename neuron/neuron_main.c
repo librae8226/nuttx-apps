@@ -20,6 +20,52 @@
 #include <apps/netutils/cJSON.h>
 #include <apps/app_utils.h>
 
+#include "neurite.h"
+
+#define NR_BUF_SIZE	26
+static char nr_buf[NR_BUF_SIZE];
+static char nr_buf_len;
+static int nr_display_row;
+static char display_buf[16][26];
+
+static void display_refresh(void)
+{
+	int i, j;
+	for (i = 0; i < 16; i++) {
+		if (display_buf[i][0] != 0) {
+			for (j = 0; j < 26; j++)
+				display_buf[i][j] = display_buf[i][j] ? display_buf[i][j] : ' ';
+			nr_display_str(display_buf[i], 0, i);
+		}
+	}
+}
+
+static void display_scroll(void)
+{
+	int i;
+	for (i = 0; i < 15; i++) {
+		memcpy(display_buf[i], display_buf[i+1], NR_BUF_SIZE);
+	}
+}
+
+static void display_add_str(char *str)
+{
+	DEBUGASSERT(str);
+	if (nr_display_row == 15) {
+		display_scroll();
+		memcpy(display_buf[15], str, NR_BUF_SIZE);
+	} else {
+		memcpy(display_buf[nr_display_row], str, NR_BUF_SIZE);
+		nr_display_row++;
+	}
+	display_refresh();
+}
+
+static void frame_end_callback(void)
+{
+	display_add_str(nr_buf);
+}
+
 #ifdef CONFIG_BUILD_KERNEL
 int main(int argc, FAR char *argv[])
 #else
@@ -27,41 +73,52 @@ int neuron_main(int argc, char *argv[])
 #endif
 {
 	int ret = OK;
+	struct neurite_s *nr = NULL;
 
 	log_info("entry\n");
 
+	bzero(nr_buf, sizeof(nr_buf));
+	nr_buf_len = 0;
+	bzero(display_buf, sizeof(display_buf));
+	nr_display_row = 0;
+
 	ret = nr_display_init();
 	if (ret < 0) {
-		log_info("entry\n");
+		log_err("nr_display_init failed\n");
 		goto neuron_exit;
 	}
 
-	nr_display_str("hi linkgo.io 0", 0, 0);
-	nr_display_str("hi linkgo.io 1", 0, 1);
-	nr_display_str("hi linkgo.io 2", 0, 2);
-	nr_display_str("hi linkgo.io 3 a long long string", 0, 3);
-	nr_display_str("hi linkgo.io 4", 0, 4);
-	nr_display_str("hi linkgo.io 5 a long long string", 0, 5);
-	nr_display_str("hi linkgo.io 6", 0, 6);
-	nr_display_str("hi linkgo.io 7 a long long string", 0, 7);
-	nr_display_str("hi linkgo.io 8", 0, 8);
-	nr_display_str("hi linkgo.io 9", 0, 9);
-	nr_display_str("hi linkgo.io 10", 0, 10);
-	nr_display_str("hi linkgo.io 11", 0, 11);
-	nr_display_str("hi linkgo.io 12", 0, 12);
-	nr_display_str("hi linkgo.io 13", 0, 13);
-	nr_display_str("hi linkgo.io 14", 0, 14);
-	nr_display_str("hi linkgo.io 15", 0, 15);
-	nr_display_str("hi linkgo.io 16", 0, 16);
-	nr_display_str("hi linkgo.io 17", 0, 17);
-	nr_display_str("hi linkgo.io 18", 0, 18);
-	sleep(1);
-	nr_display_str("clearing all...", 0, 0);
 	nr_display_clear();
-	sleep(1);
-	nr_display_str("linkgo.io", 8, 7);
-	nr_display_str("try to put it in center", 1, 8);
-	sleep(3);
+	nr_display_str("Made with love by", 4, 7);
+	nr_display_str("linkgo.io", 8, 8);
+	sleep(2);
+	nr_display_clear();
+
+	nr = neurite_init();
+	if (!nr) {
+		log_err("neurite_init failed\n");
+		goto neuron_exit;
+	}
+
+	while (1) {
+		char value;
+		while (nr->try_read(nr->priv, &value)) {
+			switch (value) {
+				case 0x0a:
+					frame_end_callback();
+					nr_buf_len = 0;
+					bzero(nr_buf, sizeof(nr_buf));
+					break;
+				default:
+//					log_dbg("input: %d\n", value);
+					if (nr_buf_len < NR_BUF_SIZE)
+						nr_buf[nr_buf_len++] = value;
+					break;
+			}
+		}
+	}
+
+	nr->deinit(nr->priv);
 	nr_display_deinit();
 
 neuron_exit:
