@@ -23,18 +23,18 @@
 #include "neurite.h"
 
 #define NR_BUF_SIZE	26
+#define NR_NROWS	16
 static char nr_buf[NR_BUF_SIZE];
 static char nr_buf_len;
 static int nr_display_row;
-static char display_buf[16][26];
+static char display_buf[NR_NROWS][NR_BUF_SIZE];
 
 static void display_refresh(void)
 {
 	int i, j;
-	for (i = 0; i < 16; i++) {
+	for (i = 0; i < NR_NROWS; i++) {
 		if (display_buf[i][0] != 0) {
-			for (j = 0; j < 26; j++)
-				display_buf[i][j] = display_buf[i][j] ? display_buf[i][j] : ' ';
+			nr_display_clear_row(i);
 			nr_display_str(display_buf[i], 0, i);
 		}
 	}
@@ -43,27 +43,28 @@ static void display_refresh(void)
 static void display_scroll(void)
 {
 	int i;
-	for (i = 0; i < 15; i++) {
-		memcpy(display_buf[i], display_buf[i+1], NR_BUF_SIZE);
+	for (i = 0; i < NR_NROWS - 1; i++) {
+		memset(display_buf[i], ' ', NR_BUF_SIZE);
+		strncpy(display_buf[i], display_buf[i+1], NR_BUF_SIZE);
 	}
 }
 
 static void display_add_str(char *str)
 {
 	DEBUGASSERT(str);
-	if (nr_display_row == 15) {
+	if (nr_display_row == NR_NROWS) {
 		display_scroll();
-		memcpy(display_buf[15], str, NR_BUF_SIZE);
+		strncpy(display_buf[nr_display_row-1], str, NR_BUF_SIZE);
 	} else {
-		memcpy(display_buf[nr_display_row], str, NR_BUF_SIZE);
+		strncpy(display_buf[nr_display_row], str, NR_BUF_SIZE);
 		nr_display_row++;
 	}
-	display_refresh();
 }
 
 static void frame_end_callback(void)
 {
 	display_add_str(nr_buf);
+	display_refresh();
 }
 
 #ifdef CONFIG_BUILD_KERNEL
